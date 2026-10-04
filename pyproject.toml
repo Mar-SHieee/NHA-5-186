@@ -1,0 +1,32 @@
+#It tells pip what your package is and what it depends on, and tools like Ruff and pytest read their settings from it.
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "shield-core"
+version = "0.1.0"
+requires-python = ">=3.10"
+dependencies = []
+
+[project.optional-dependencies]
+dev = ["pytest", "ruff", "pre-commit"]
+
+[tool.setuptools.packages.find]
+include = ["shield_core*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B"]
+
+#    E = style errors (pycodestyle),
+#    F = real bugs like unused imports (pyflakes),
+#    I = import sorting,
+#    B = common bug patterns.
