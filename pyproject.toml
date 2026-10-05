@@ -16,6 +16,7 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = ["pytest", "ruff", "pre-commit"]
+gnn = ["torch_geometric>=2.8"]
 
 [tool.setuptools.packages.find]
 include = ["shield_core*", "eval*"]
