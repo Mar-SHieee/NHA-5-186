@@ -1,0 +1,5 @@
+**/cpg.bin
+**/cpg.bin.zip
+**/*.tmp
+**/__pycache__
+**/*.pyc
