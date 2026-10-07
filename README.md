@@ -101,6 +101,13 @@ CI runs the lint, format check, and tests on every pull request and on every pus
 
 Joern turns source code into a code property graph (syntax, control flow, data flow, and call edges). We run it in Docker so everyone uses the same pinned version. The image is built locally from `docker/joern/Dockerfile`.
 
+The image contains:
+
+- Java 21 and Joern (pinned version, see `JOERN_VERSION` in the Dockerfile)
+- Python in a virtual environment (`/opt/venv`) with locked packages from `docker/joern/requirements-docker.txt`: `tree-sitter` plus the Python, C and C++ grammars
+- A smoke test in `/opt/smoke`
+- A non-root user (`shield`); mounted code appears in `/workspace`
+
 ### Build
 
 Docker Desktop must be running ("Engine running"). From the repo root:
@@ -132,6 +139,25 @@ docker run --rm -it -v "${PWD}/mycode:/workspace" shield-joern
 
 On macOS or Linux, use `$PWD` instead of `${PWD}`.
 
+### Smoke test
+
+Parses one sample per language (Python, C, C++) with tree-sitter and with Joern, and fails if any parse is broken:
+
+```
+docker run --rm shield-joern /opt/smoke/run_smoke.sh
+```
+
+Expected last line: `ALL SMOKE TESTS PASSED`. It takes a minute or two because the JVM starts once per language. Run it after any change to the Dockerfile or the requirements file.
+
+### Python and tree-sitter in the image
+
+```
+docker run --rm shield-joern python --version
+docker run --rm shield-joern pip freeze
+```
+
+To change a package version, edit `docker/joern/requirements-docker.txt` (every line pinned as `package==x.y.z`), rebuild, and rerun the smoke test.
+
 ### Changing the Joern version
 
 Edit `JOERN_VERSION` in `docker/joern/Dockerfile`, rebuild, and tell the team. The graph cache key includes the Joern version, so a version change invalidates cached graphs.
@@ -146,12 +172,16 @@ Edit `JOERN_VERSION` in `docker/joern/Dockerfile`, rebuild, and tell the team. T
 - **Joern build fails at the download step:** check your internet connection and that `JOERN_VERSION` in the Dockerfile is a real release tag.
 - **Joern is killed or runs out of memory:** raise Docker Desktop's memory limit (Settings, Resources) or the `-Xmx` value in `JAVA_OPTS`.
 - **`joern: command not found`:** rebuild the image and do not override the default command.
+- **`invalid file request` during build:** the repo is inside OneDrive and a file is an online-only placeholder. Right-click the folder, choose "Always keep on this device" (or move the repo outside OneDrive).
+- **`python3: not found` during build:** the first `RUN` of the Dockerfile must install `python3 python3-venv`.
+- **Smoke script fails with "bad interpreter":** the script has Windows line endings. The Dockerfile fixes this, and `.gitattributes` keeps `*.sh` files as LF.
+- **Docker is very slow or returns `500 Internal Server Error`:** the C: drive is probably full. Free space, run `docker builder prune`, restart Docker Desktop, and aim for 20 GB free.
 
 ## Repository layout
 
 ```
 .github/            CI workflow and PR template
-docker/joern/       Dockerfile for the pinned Joern image
+docker/joern/       Joern image: Dockerfile, locked requirements, smoke tests
 shield_core/        the core library
 tests/              unit tests
 SHIELD_PLAN.md      plan, decisions, and task checklist

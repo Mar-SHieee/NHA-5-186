@@ -8,13 +8,17 @@ build-backend = "setuptools.build_meta"
 name = "shield-core"
 version = "0.1.0"
 requires-python = ">=3.10"
-dependencies = ["pandas"]
+dependencies = [ "torch",
+    "transformers",
+    "scikit-learn",
+    "pandas"]
 
 [project.optional-dependencies]
 dev = ["pytest", "ruff", "pre-commit"]
+gnn = ["torch_geometric>=2.8"]
 
 [tool.setuptools.packages.find]
-include = ["shield_core*"]
+include = ["shield_core*", "eval*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
