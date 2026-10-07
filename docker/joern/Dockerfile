@@ -9,7 +9,7 @@ FROM eclipse-temurin:21-jdk
 # Deleting the apt cache in the SAME RUN keeps that layer small too.
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
-        curl ca-certificates unzip git \
+        curl ca-certificates unzip git python3 python3-venv \
     && rm -rf /var/lib/apt/lists/*
 
 # Pinned Joern version (TODO: use a real tag from the releases page)
@@ -32,6 +32,23 @@ ENV PATH="/opt/joern/joern-cli:${PATH}"
 # Give the JVM a memory cap. Joern is memory-hungry; raise this for big repos.
 # (Also make sure Docker Desktop itself is allowed enough RAM.)
 ENV JAVA_OPTS="-Xmx4G"
+
+# Python virtual environment with locked packages (tree-sitter + grammars)
+RUN python3 -m venv /opt/venv
+ENV PATH="/opt/venv/bin:${PATH}"
+COPY requirements-docker.txt /tmp/requirements-docker.txt
+RUN pip install --no-cache-dir -r /tmp/requirements-docker.txt \
+    && rm /tmp/requirements-docker.txt
+
+# Smoke test files (fix Windows line endings so the script runs on Linux)
+COPY smoke /opt/smoke
+RUN sed -i 's/\r$//' /opt/smoke/run_smoke.sh && chmod +x /opt/smoke/run_smoke.sh
+
+# Non-root user; /workspace is where mounted code appears
+RUN useradd -m shield \
+    && mkdir -p /workspace \
+    && chown shield:shield /workspace
+USER shield
 
 # Your code is mounted here at runtime:
 #   docker run --rm -v "$PWD/code:/workspace" shield-joern joern-parse .
