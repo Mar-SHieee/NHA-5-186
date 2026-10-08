@@ -42,6 +42,29 @@ def normalize_cwe(value) -> list[str]:
     if value is None or (isinstance(value, float) and pd.isna(value)):
         return []
 
+    if isinstance(value, str):
+        value = value.split(",")
+
+    elif not isinstance(value, (list, tuple)):
+        value = [value]
+
+    result = []
+
+    for item in value:
+        if item is None:
+            continue
+
+        match = re.fullmatch(
+            r"(?:CWE-)?(\d+)",
+            str(item).strip(),
+            re.IGNORECASE,
+        )
+
+        if match:
+            result.append(f"CWE-{int(match.group(1))}")
+
+    return result
+
     if not isinstance(value, (list, tuple)):
         value = [value]
 

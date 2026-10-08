@@ -8,11 +8,14 @@ build-backend = "setuptools.build_meta"
 name = "shield-core"
 version = "0.1.0"
 requires-python = ">=3.10"
-dependencies = [ "torch",
+dependencies = [
+    "torch",
     "transformers",
     "scikit-learn",
     "pandas",
-    "datasets"]
+    "pyarrow",
+    "datasets",
+]
 
 [project.optional-dependencies]
 dev = ["pytest", "ruff", "pre-commit"]
