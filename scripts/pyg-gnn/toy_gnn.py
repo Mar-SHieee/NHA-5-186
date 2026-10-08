@@ -41,17 +41,21 @@ class Net(torch.nn.Module):
         super().__init__()
         self.conv1 = GCNConv(in_dim, hidden)
         self.conv2 = GCNConv(hidden, hidden)
+        self.conv3 = GCNConv(hidden, hidden)
+        self.conv4 = GCNConv(hidden, hidden)
         self.lin = Linear(hidden, num_classes)
 
     def forward(self, x, edge_index, batch):
         x = self.conv1(x, edge_index).relu()
         x = self.conv2(x, edge_index).relu()
+        x = self.conv3(x, edge_index).relu()
+        x = self.conv4(x, edge_index).relu()
         x = global_mean_pool(x, batch)  # [num_nodes, hidden] -> [num_graphs, hidden]
         return self.lin(x)  # [num_graphs, num_classes]
 
 
 # ---------- 4. Train / evaluate ----------
-model = Net(dataset.num_node_features, 32, dataset.num_classes).to(dev)
+model = Net(dataset.num_node_features, 512, dataset.num_classes).to(dev)
 optimizer = torch.optim.Adam(model.parameters(), lr=0.01)
 
 
@@ -79,7 +83,7 @@ def evaluate(loader):
 
 
 start = time.time()
-for epoch in range(1, 101):
+for epoch in range(1, 1001):
     train()
     if epoch % 10 == 0:
         tr_acc = evaluate(train_loader)
