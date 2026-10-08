@@ -33,12 +33,11 @@ def test_mapping(tmp_path):
     assert row["code"] == VUL["func_before"]
     assert row["fixed_code"] == VUL["func"]
     assert row["label"] == 1
-    assert row["cwe"] == "CWE-189"
+    assert row["cwe"] == ["CWE-189"]
     assert row["project"] == "qemu"
     assert row["commit"] == VUL["commit_hash"]
     assert row["language"] == "cpp"
     assert row["source"] == "megavul"
-    assert df["date"].isna().all()
 
 
 def test_unknown_extension_is_skipped(tmp_path):

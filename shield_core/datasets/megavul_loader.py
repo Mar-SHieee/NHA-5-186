@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import sys
 from collections import Counter
 from itertools import batched, islice
 from pathlib import Path, PurePosixPath
@@ -62,7 +61,7 @@ def _to_row(rec: dict) -> dict | None:
         "code": rec.get("func_before") if is_vul else rec.get("func"),
         "language": language,
         "label": int(is_vul),
-        "cwe": cwe_ids[0] if cwe_ids else None,  # first CWE only (documented rule)
+        "cwe": cwe_ids if cwe_ids else None,
         "project": rec.get("repo_name"),
         "commit": rec.get("commit_hash"),
         # "date": not available in MegaVul -> conform() fills it with NaT
@@ -171,9 +170,9 @@ def megavul_to_parquet(
 
             stats["rows"] += len(df)
             stats["vulnerable"] += len(vul)
-            stats["vulnerable_missing_cwe"] += int(vul["cwe"].isna().sum())
+            stats["vulnerable_missing_cwe"] += int(vul["cwe"].apply(lambda x: len(x) == 0).sum())
 
-            cwe_counts.update(vul["cwe"].dropna().value_counts().to_dict())
+            cwe_counts.update(vul["cwe"].explode().dropna().value_counts().to_dict())
 
             chunk_lang = df.groupby("language")["label"].agg(
                 count="count",
@@ -217,29 +216,4 @@ def megavul_to_parquet(
 
 
 if __name__ == "__main__":
-    arg = sys.argv[1] if len(sys.argv) > 1 else "5"
-
-    if arg == "full":
-        megavul_to_parquet()
-    else:
-        sample = load_megavul(limit=int(arg))
-
-        pd.set_option("display.max_colwidth", 60)
-
-        print(sample.dtypes)
-        print(sample.drop(columns=["code", "fixed_code"]))
-
-        print(
-            "\ncode[0] (first 300 chars):\n",
-            sample.loc[0, "code"][:300],
-        )
-
-        print(
-            "\nfixed_code[0] (first 300 chars):\n",
-            sample.loc[0, "fixed_code"][:300],
-        )
-    pd.set_option("display.max_colwidth", 60)
-    print(sample.dtypes)
-    print(sample.drop(columns=["code", "fixed_code"]))
-    print("\ncode[0] (first 300 chars):\n", sample.loc[0, "code"][:300])
-    print("\nfixed_code[0] (first 300 chars):\n", sample.loc[0, "fixed_code"][:300])
+    megavul_to_parquet()
