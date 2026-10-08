@@ -1,6 +1,8 @@
 # shield_core/datasets/cvefixes_python_convert_db.py
 import gzip
 import sqlite3
+import sys
+import urllib.request
 from pathlib import Path
 
 # <this file> -> datasets -> shield_core -> project root
@@ -8,15 +10,34 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 RAW_DIR = PROJECT_ROOT / "data" / "raw"
 DST = RAW_DIR / "CVEfixes.db"
 
+# Direct link to Zenodo for CVEfixes v1.0.8
+DOWNLOAD_URL = "https://zenodo.org/records/10439153/files/CVEfixes_v1.0.8.sql.gz"
+EXPECTED_FILE = RAW_DIR / "CVEfixes_v1.0.8.sql.gz"
+
 # Finds the dump whatever the version is (CVEfixes_v1.0.7.sql.gz, v1.0.8, ...).
 dumps = sorted(RAW_DIR.glob("CVEfixes_v*.sql.gz"))
+
 if not dumps:
-    raise FileNotFoundError(
-        f"No CVEfixes_v*.sql.gz found in {RAW_DIR}. Download it from Zenodo and put it there."
-    )
-SRC = dumps[-1]
-if len(dumps) > 1:
-    print(f"Found several dumps, using the last one: {SRC.name}")
+    print(f"Dataset not found in {RAW_DIR}. Starting automated download...")
+    print(f"Downloading from: {DOWNLOAD_URL}")
+    print("Please wait, this is a large file and might take a while...")
+
+    # Ensure the raw directory exists before downloading
+    RAW_DIR.mkdir(parents=True, exist_ok=True)
+
+    try:
+        # Download the file directly to the expected path
+        urllib.request.urlretrieve(DOWNLOAD_URL, EXPECTED_FILE)
+        print("Download completed successfully!")
+        SRC = EXPECTED_FILE
+    except Exception as e:
+        print(f"Download failed: {e}")
+        print("Please download it manually from Zenodo and place it in the raw directory.")
+        sys.exit(1)
+else:
+    SRC = dumps[-1]
+    if len(dumps) > 1:
+        print(f"Found several dumps, using the last one: {SRC.name}")
 
 if DST.exists():
     raise FileExistsError(f"{DST} already exists. Delete or rename it first.")
