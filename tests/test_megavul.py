@@ -3,7 +3,7 @@ import json
 import pandas as pd
 import pyarrow.parquet as pq
 
-from shield_core.datasets.megavul_loader import (
+from shield_core.datasets.c_cpp_loaders.megavul_loader import (
     load_megavul,
     megavul_to_parquet,
 )

@@ -1,6 +1,6 @@
 import pandas as pd
 
-from shield_core.datasets.bigvul_loader import map_to_unified
+from shield_core.datasets.c_cpp_loaders.bigvul_loader import map_to_unified
 from shield_core.datasets.schema import conform
 
 
