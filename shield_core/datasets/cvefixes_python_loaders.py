@@ -223,12 +223,11 @@ class CVEfixesPythonLoader:
             int((df["label"] == 0).sum()),
         )
         log.info(
-            "%s: non-null cwe=%d project=%d commit=%d date=%d fixed_code=%d",
+            "%s: non-null cwe=%d project=%d commit=%d fixed_code=%d",
             name,
             df["cwe"].notna().sum(),
             df["project"].notna().sum(),
             df["commit"].notna().sum(),
-            df["date"].notna().sum(),
             df["fixed_code"].notna().sum(),
         )
         log.info("%s: validation passed", name)

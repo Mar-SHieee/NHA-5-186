@@ -277,15 +277,15 @@ def test_execute_pipeline_end_to_end(loader):
     safe = out[out["label"] == 0].iloc[0]
     assert safe["code"] == "def a(): return 2"
     assert pd.isna(safe["fixed_code"])
-    assert pd.isna(safe["cwe"])
+    assert len(safe["cwe"]) == 0
 
     vuln_a = out[out["code"] == "def a(): return 1"].iloc[0]
     assert vuln_a["fixed_code"] == "def a(): return 2"
     assert vuln_a["project"] == "proj"
     assert vuln_a["commit"] == "h1"
-    assert pd.notna(vuln_a["date"])
-    assert vuln_a["cwe"].startswith("CWE-20")  # h1 has CWE-20 and CWE-79
+    assert "CWE-20" in vuln_a["cwe"]
+    assert "CWE-79" in vuln_a["cwe"]  # h1 has CWE-20 and CWE-79
 
     vuln_f = out[out["code"] == "def f(): x"].iloc[0]
     assert pd.isna(vuln_f["fixed_code"])  # identical code is not a fix
-    assert pd.isna(vuln_f["cwe"])  # h2 only has an NVD placeholder
+    assert len(vuln_f["cwe"]) == 0  # h2 only has an NVD placeholder
