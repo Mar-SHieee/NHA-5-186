@@ -47,3 +47,6 @@ select = ["E", "F", "I", "B"]
 #    F = real bugs like unused imports (pyflakes),
 #    I = import sorting,
 #    B = common bug patterns.
+
+[tool.ruff.lint.isort]
+known-first-party = ["shield_core", "eval", "languages"]

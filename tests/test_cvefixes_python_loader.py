@@ -1,7 +1,7 @@
 import pandas as pd
 import pytest
 
-from shield_core.datasets.cvefixes_python_loaders import CVEfixesPythonLoader
+from shield_core.datasets.python_loaders.cvefixes_python_loaders import CVEfixesPythonLoader
 from shield_core.datasets.schema import COLUMNS
 
 # ---------- toy CVEfixes tables ----------

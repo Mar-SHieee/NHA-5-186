@@ -30,9 +30,11 @@ def batched(iterable, n):
         yield batch
 
 
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+
 SOURCE = "megavul"
-DEFAULT_PATH = Path("data/raw/megavul_simple.json")
-DEFAULT_OUT = Path("data/interim/megavul.parquet")
+DEFAULT_PATH = PROJECT_ROOT / "data" / "raw" / "megavul_simple.json"
+DEFAULT_OUT = PROJECT_ROOT / "data" / "interim" / "megavul.parquet"
 
 # Language is not a MegaVul field; it is derived from the extension of file_path.
 # Extensions not listed here are skipped (never guessed).

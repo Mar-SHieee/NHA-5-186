@@ -22,7 +22,7 @@ from shield_core.datasets.schema import conform, validate
 # ----------------------------------------------------------------------
 # Paths (parents[2] = repository root, wherever the command is run from)
 # ----------------------------------------------------------------------
-REPO_ROOT = Path(__file__).resolve().parents[2]
+REPO_ROOT = Path(__file__).resolve().parents[3]
 INTERIM_DIR = REPO_ROOT / "data" / "interim"
 FULL_PATH = INTERIM_DIR / "bigvul_full.parquet"  # raw, unchanged
 UNIFIED_PATH = INTERIM_DIR / "bigvul.parquet"  # unified 8-column schema

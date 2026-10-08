@@ -1,6 +1,6 @@
 import time
 
-from shield_core.embedder import CodeBERTEmbedder
+from shield_core.models.embedding.embedder import CodeBERTEmbedder
 
 
 def test_embedder_cache():
