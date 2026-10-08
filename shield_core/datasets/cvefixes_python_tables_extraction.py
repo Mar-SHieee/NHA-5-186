@@ -15,10 +15,12 @@ QUERIES = {
         WHERE lower(programming_language) = 'python'
     """,
     "method_change": """
-        SELECT mc.*
-        FROM method_change mc
-        JOIN file_change fc ON fc.file_change_id = mc.file_change_id
-        WHERE lower(fc.programming_language) = 'python'
+        SELECT *
+        FROM method_change
+        WHERE file_change_id IN (
+            SELECT file_change_id FROM file_change
+            WHERE lower(programming_language) = 'python'
+        )
     """,
     "commits": f"""
         SELECT * FROM commits

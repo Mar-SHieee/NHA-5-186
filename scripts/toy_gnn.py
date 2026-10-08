@@ -67,7 +67,7 @@ def train():
 
 
 @torch.no_grad()
-def test(loader):
+def evaluate(loader):
     model.eval()
     correct = 0
     for data in loader:
@@ -82,7 +82,9 @@ start = time.time()
 for epoch in range(1, 101):
     train()
     if epoch % 10 == 0:
-        print(f"epoch {epoch:3d} | train {test(train_loader):.3f} | test {test(test_loader):.3f}")
+        tr_acc = evaluate(train_loader)
+        te_acc = evaluate(test_loader)
+        print(f"epoch {epoch:3d} | train {tr_acc:.3f} | test {te_acc:.3f}")
 print(f"training time: {time.time() - start:.1f} s")
 
 # ---------- 5. Resource log ----------
