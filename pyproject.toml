@@ -33,6 +33,9 @@ languages = ["*.yaml"]
 testpaths = ["tests"]
 pythonpath = ["."]
 
+[project.scripts]
+shield = "shield_core.cli:main"
+
 [tool.ruff]
 line-length = 100
 target-version = "py310"
