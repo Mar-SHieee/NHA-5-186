@@ -3,6 +3,7 @@ import gzip
 import sqlite3
 import sys
 import urllib.request
+import zipfile  # add to the imports at the top
 from pathlib import Path
 
 # <this file> -> datasets -> shield_core -> project root
@@ -10,34 +11,53 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 RAW_DIR = PROJECT_ROOT / "data" / "raw"
 DST = RAW_DIR / "CVEfixes.db"
 
-# Direct link to Zenodo for CVEfixes v1.0.8
-DOWNLOAD_URL = "https://zenodo.org/records/10439153/files/CVEfixes_v1.0.8.sql.gz"
-EXPECTED_FILE = RAW_DIR / "CVEfixes_v1.0.8.sql.gz"
 
-# Finds the dump whatever the version is (CVEfixes_v1.0.7.sql.gz, v1.0.8, ...).
-dumps = sorted(RAW_DIR.glob("CVEfixes_v*.sql.gz"))
+# Zenodo record for CVEfixes v1.0.8 (ships as a single zip)
+DOWNLOAD_URL = "https://zenodo.org/records/13118970/files/CVEfixes_v1.0.8.zip?download=1"
+ZIP_FILE = RAW_DIR / "CVEfixes_v1.0.8.zip"
+
+
+def _find_dumps() -> list[Path]:
+    return sorted(RAW_DIR.glob("CVEfixes_v*.sql.gz"))
+
+
+def _extract_dump_from_zip() -> None:
+    """Pull the .sql.gz out of the zip into RAW_DIR."""
+    with zipfile.ZipFile(ZIP_FILE) as z:
+        members = [m for m in z.namelist() if m.endswith(".sql.gz")]
+        if not members:
+            print(f"No .sql.gz found in {ZIP_FILE.name}. Contents: {z.namelist()}")
+            sys.exit(1)
+        for m in members:
+            target = RAW_DIR / Path(m).name
+            print(f"Extracting {m} -> {target.name}")
+            with z.open(m) as src, open(target, "wb") as out:
+                while chunk := src.read(1024 * 1024):
+                    out.write(chunk)
+
+
+RAW_DIR.mkdir(parents=True, exist_ok=True)
+dumps = _find_dumps()
 
 if not dumps:
-    print(f"Dataset not found in {RAW_DIR}. Starting automated download...")
-    print(f"Downloading from: {DOWNLOAD_URL}")
-    print("Please wait, this is a large file and might take a while...")
-
-    # Ensure the raw directory exists before downloading
-    RAW_DIR.mkdir(parents=True, exist_ok=True)
-
-    try:
-        # Download the file directly to the expected path
-        urllib.request.urlretrieve(DOWNLOAD_URL, EXPECTED_FILE)
-        print("Download completed successfully!")
-        SRC = EXPECTED_FILE
-    except Exception as e:
-        print(f"Download failed: {e}")
-        print("Please download it manually from Zenodo and place it in the raw directory.")
+    if not ZIP_FILE.exists():
+        print(f"Downloading {DOWNLOAD_URL} (12.7 GB, this will take a while)...")
+        try:
+            urllib.request.urlretrieve(DOWNLOAD_URL, ZIP_FILE)
+        except Exception as e:
+            ZIP_FILE.unlink(missing_ok=True)  # don't leave a partial zip behind
+            print(f"Download failed: {e}")
+            print(f"Download it manually and place it at {ZIP_FILE}")
+            sys.exit(1)
+    _extract_dump_from_zip()
+    dumps = _find_dumps()
+    if not dumps:
+        print("Extracted files don't match CVEfixes_v*.sql.gz. Rename the dump and re-run.")
         sys.exit(1)
-else:
-    SRC = dumps[-1]
-    if len(dumps) > 1:
-        print(f"Found several dumps, using the last one: {SRC.name}")
+
+SRC = dumps[-1]
+if len(dumps) > 1:
+    print(f"Found several dumps, using the last one: {SRC.name}")
 
 if DST.exists():
     raise FileExistsError(f"{DST} already exists. Delete or rename it first.")
