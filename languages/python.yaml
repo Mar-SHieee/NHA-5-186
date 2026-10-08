@@ -2,7 +2,7 @@ name : python
 enabled : true
 extensions : [".py"]
 joern_frontend : PYTHONSRC
-tree-sitter :
+tree_sitter :
   default : tree_sitter_python
 cwes : []
 sources : []
