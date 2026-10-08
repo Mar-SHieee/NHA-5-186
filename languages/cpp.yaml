@@ -1,0 +1,13 @@
+name: cpp
+enabled: true
+extensions: [".c", ".h", ".cc", ".cpp", ".cxx", ".hpp"]
+joern_frontend: NEWC
+# Here it will use tree_sitter_c grammer if extension
+# is .c otherwise will use tree_sitter_cpp -> this works
+tree_sitter:
+  default: tree_sitter_cpp
+  by_extension:
+    ".c": tree_sitter_c
+cwes: []
+sources: []
+sinks: []

@@ -1,0 +1,10 @@
+# Disabled: the team decided no Java. Kept so enabling it later is a one-word change.
+name: java
+enabled: false
+extensions: [".java"]
+joern_frontend: JAVASRC
+tree_sitter:
+  default: tree_sitter_java
+cwes: []
+sources: []
+sinks: []
