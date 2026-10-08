@@ -52,7 +52,9 @@ def conform(df: pd.DataFrame, source: str) -> pd.DataFrame:
         if col not in out:
             out[col] = pd.NA
     out["cwe"] = out["cwe"].map(normalize_cwe)
-    out["date"] = pd.to_datetime(out["date"], errors="coerce", utc=True).dt.tz_localize(None)
+    out["date"] = pd.to_datetime(
+        out["date"], errors="coerce", utc=True, format="mixed"
+    ).dt.tz_localize(None)
     out = out[COLUMNS].astype(DTYPES)
     return out.reset_index(drop=True)
 
