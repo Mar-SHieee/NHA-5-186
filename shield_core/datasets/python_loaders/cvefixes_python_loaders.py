@@ -26,8 +26,8 @@ from shield_core.datasets.schema import conform, validate
 
 log = logging.getLogger(__name__)
 
-# shield_core/datasets/<this file> -> datasets -> shield_core -> project root
-PROJECT_ROOT = Path(__file__).resolve().parents[2]
+# <this file> -> python_loaders -> datasets -> shield_core -> project root
+PROJECT_ROOT = Path(__file__).resolve().parents[3]
 
 CWE_SEPARATOR = ", "
 _CWE_OK = re.compile(r"^CWE-\d+$")  # drops NVD-CWE-Other / NVD-CWE-noinfo
