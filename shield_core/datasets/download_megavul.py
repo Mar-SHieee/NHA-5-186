@@ -5,7 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 from urllib.request import Request, urlopen
 
-SOURCE_URL = "https://1drv.ms/u/c/6CFE4123EACEEBDC/" "AdzrzuojQf4ggGxzcgAAAAA?e=oD9TTq"
+SOURCE_URL = "https://1drv.ms/u/c/6CFE4123EACEEBDC/AdzrzuojQf4ggGxzcgAAAAA?e=oD9TTq"
 
 OUTPUT_PATH = Path("data/raw/megavul_simplee.json")
 
