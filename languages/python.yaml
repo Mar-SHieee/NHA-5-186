@@ -1,0 +1,9 @@
+name : python
+enabled : true
+extensions : [".py"]
+joern_frontend : PYTHONSRC
+tree-sitter :
+  default : tree_sitter_python
+cwes : []
+sources : []
+sinks : []
