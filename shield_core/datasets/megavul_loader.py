@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections import Counter
-from itertools import batched, islice
+from itertools import islice
 from pathlib import Path, PurePosixPath
 
 import ijson
@@ -12,6 +12,23 @@ import pyarrow as pa
 import pyarrow.parquet as pq
 
 from shield_core.datasets.schema import conform, validate
+
+
+def batched(iterable, n):
+    """Batch data into tuples of length n. Last batch may be shorter."""
+    if n < 1:
+        raise ValueError("n must be at least one")
+
+    iterator = iter(iterable)
+
+    while True:
+        batch = tuple(islice(iterator, n))
+
+        if not batch:
+            return
+
+        yield batch
+
 
 SOURCE = "megavul"
 DEFAULT_PATH = Path("data/raw/megavul_simple.json")
