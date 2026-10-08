@@ -15,6 +15,7 @@ dependencies = [
     "pandas",
     "pyarrow",
     "datasets",
+    "ijson"
 ]
 
 [project.optional-dependencies]
