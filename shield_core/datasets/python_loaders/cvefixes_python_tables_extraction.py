@@ -75,8 +75,10 @@ class CVEfixesExtractor:
     def extract_all_tables(self, table_list: list[str]) -> None:
         """Orchestrator: Manage the sequential extraction process for all specified tables."""
         if not self.db_path.exists():
-            print(f"Error: Database file not found at {self.db_path}")
-            return
+            raise FileNotFoundError(
+                f"Database file not found at {self.db_path}. "
+                f"Run: python -m shield_core.datasets.python_loaders.cvefixes_python_convert_db"
+            )
 
         conn = self._create_connection()
 
@@ -99,11 +101,11 @@ if __name__ == "__main__":
     # cross-platform compatibility for the team
     # ---------------------------------------------------------
 
-    # __file__ is shield_core/datasets/cvefixes_python_tables_extraction.py
+    # __file__ is shield_core/datasets/python_loaders/cvefixes_python_tables_extraction.py
     current_dir = Path(__file__).resolve().parent
 
-    # Navigate two levels up to reach the project root
-    project_root = current_dir.parent.parent
+    # python_loaders -> datasets -> shield_core -> project root
+    project_root = current_dir.parent.parent.parent
 
     # Define the path to the SQLite database (located in data/raw)
     DB_FILE_PATH = project_root / "data" / "raw" / "CVEfixes.db"

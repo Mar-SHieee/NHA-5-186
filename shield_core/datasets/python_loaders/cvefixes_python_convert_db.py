@@ -1,13 +1,13 @@
-# shield_core/datasets/cvefixes_python_convert_db.py
+# shield_core/datasets/python_loaders/cvefixes_python_convert_db.py
 import gzip
 import sqlite3
 import sys
 import urllib.request
-import zipfile  # add to the imports at the top
+import zipfile
 from pathlib import Path
 
-# <this file> -> datasets -> shield_core -> project root
-PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
+# <this file> -> python_loaders -> datasets -> shield_core -> project root
+PROJECT_ROOT = Path(__file__).resolve().parents[3]
 RAW_DIR = PROJECT_ROOT / "data" / "raw"
 DST = RAW_DIR / "CVEfixes.db"
 
