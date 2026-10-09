@@ -1,4 +1,4 @@
-"""CVEfixes (Python) loader: CVEfixes CSV tables -> unified schema, function level.
+"""CVEfixes (C/C++) loader: CVEfixes CSV tables -> unified schema, function level.
 
 One row = one function (``method_change``). For every old function
 (``before_change == True``) we build two samples:
@@ -6,12 +6,15 @@ One row = one function (``method_change``). For every old function
 * the old function      -> label 1, ``fixed_code`` = its patched version (if found)
 * the patched function  -> label 0 (``fixed_code`` and ``cwe`` are empty)
 
+C and C++ are loaded together (CVEfixes labels them 'C' and 'C++'); the
+``language`` column keeps them apart as 'c' and 'cpp'.
+
 Known limitation: CVEfixes stores every function that changed in a fix commit,
 so some "vulnerable" functions are only touched by the commit, not the bug itself.
 
 Pairing the old and the patched function is done on ``file_change_id`` +
 ``signature``. Functions with no match keep ``fixed_code = NA`` and produce no
-safe sample1.
+safe sample.
 """
 
 from __future__ import annotations
@@ -26,18 +29,20 @@ from shield_core.datasets.schema import conform, validate
 
 log = logging.getLogger(__name__)
 
-# <this file> -> python_loaders -> datasets -> shield_core -> project root
+# <this file> -> c_cpp_loaders -> datasets -> shield_core -> project root
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 
 CWE_SEPARATOR = ", "
 _CWE_OK = re.compile(r"^CWE-\d+$")  # drops NVD-CWE-Other / NVD-CWE-noinfo
 
 
-class CVEfixesPythonLoader:
+class CVEfixesCppLoader:
     """Turns the extracted CVEfixes CSV tables into the unified schema."""
 
-    SOURCE = "cvefixes_python"  # value of the `source` column and the parquet name
-    LANGUAGE = "python"
+    SOURCE = "cvefixes_cpp"  # value of the `source` column and the parquet name
+
+    # CVEfixes language name (lowercase) -> schema language name
+    LANGUAGE_MAP = {"c": "c", "c++": "cpp"}
 
     # Only the columns we need: file_change and method_change hold huge code columns.
     TABLE_COLUMNS = {
@@ -58,9 +63,7 @@ class CVEfixesPythonLoader:
     # ---------- setup and reading ----------
 
     def __init__(self, raw_dir: Path | None = None, interim_dir: Path | None = None) -> None:
-        self.raw_dir = (
-            Path(raw_dir) if raw_dir else (PROJECT_ROOT / "data" / "raw" / "cvefixes_python")
-        )
+        self.raw_dir = Path(raw_dir) if raw_dir else PROJECT_ROOT / "data" / "raw" / "cvefixes_cpp"
         self.interim_dir = Path(interim_dir) if interim_dir else PROJECT_ROOT / "data" / "interim"
 
     def _load_single_csv(self, table_name: str) -> pd.DataFrame:
@@ -68,7 +71,8 @@ class CVEfixesPythonLoader:
         path = self.raw_dir / f"{table_name}.csv"
         if not path.exists():
             raise FileNotFoundError(
-                f"{path} not found. Run cvefixes_python_tables_extraction.py first."
+                f"{path} not found. Run: python -m "
+                "shield_core.datasets.c_cpp_loaders.cvefixes_cpp_tables_extraction"
             )
         return pd.read_csv(path, usecols=self.TABLE_COLUMNS[table_name])
 
@@ -163,15 +167,15 @@ class CVEfixesPythonLoader:
         out["project"] = out["project"].map(self._project_name)
         return out
 
-    def _filter_python_only(self, df: pd.DataFrame) -> pd.DataFrame:
-        """Keep Python rows only."""
-        is_python = df["language"].astype(str).str.lower().eq("python")
-        return df[is_python].reset_index(drop=True)
+    def _filter_c_cpp_only(self, df: pd.DataFrame) -> pd.DataFrame:
+        """Keep C and C++ rows only."""
+        is_c_cpp = df["language"].astype(str).str.strip().str.lower().isin(self.LANGUAGE_MAP)
+        return df[is_c_cpp].reset_index(drop=True)
 
     def _normalize_language(self, df: pd.DataFrame) -> pd.DataFrame:
-        """Write the language the way the schema expects it ('python')."""
+        """Write the language the way the schema expects it ('c' or 'cpp')."""
         out = df.copy()
-        out["language"] = self.LANGUAGE
+        out["language"] = out["language"].astype(str).str.strip().str.lower().map(self.LANGUAGE_MAP)
         return out
 
     def _drop_empty_code(self, df: pd.DataFrame) -> pd.DataFrame:
@@ -224,6 +228,7 @@ class CVEfixesPythonLoader:
             int((df["label"] == 1).sum()),
             int((df["label"] == 0).sum()),
         )
+        log.info("%s: rows per language: %s", name, df["language"].value_counts().to_dict())
         log.info(
             "%s: non-null cwe=%d project=%d commit=%d fixed_code=%d",
             name,
@@ -251,7 +256,7 @@ class CVEfixesPythonLoader:
         df = self._blank_identical_fixes(df)
         df = self._rename_columns(df)
         df = self._clean_project_names(df)
-        df = self._filter_python_only(df)
+        df = self._filter_c_cpp_only(df)
         df = self._normalize_language(df)
         df = self._drop_empty_code(df)
 
@@ -267,7 +272,7 @@ class CVEfixesPythonLoader:
 
 def main() -> None:
     logging.basicConfig(level=logging.INFO, format="%(message)s")
-    CVEfixesPythonLoader().execute_pipeline()
+    CVEfixesCppLoader().execute_pipeline()
 
 
 if __name__ == "__main__":

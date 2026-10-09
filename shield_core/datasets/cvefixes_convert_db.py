@@ -6,8 +6,8 @@ import urllib.request
 import zipfile
 from pathlib import Path
 
-# <this file> -> python_loaders -> datasets -> shield_core -> project root
-PROJECT_ROOT = Path(__file__).resolve().parents[3]
+# <this file> -> datasets -> shield_core -> project root
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
 RAW_DIR = PROJECT_ROOT / "data" / "raw"
 DST = RAW_DIR / "CVEfixes.db"
 
