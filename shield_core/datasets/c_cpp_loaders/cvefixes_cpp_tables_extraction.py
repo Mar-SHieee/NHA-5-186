@@ -1,45 +1,62 @@
+"""CVEfixes (C/C++) table extraction: CVEfixes.db (SQLite) -> one CSV per table.
+
+Same job as the Python extractor, but keeps only rows whose language is C or C++.
+The database itself is built once by
+``shield_core.datasets.cvefixes_convert_db`` (it holds all
+languages), so there is no separate convert_db step for C/C++.
+
+Output goes to ``data/raw/cvefixes_cpp`` so the Python CSVs in ``data/raw/cvefixes_python``
+are never overwritten.
+"""
+
 import sqlite3
 from pathlib import Path
 
 import pandas as pd
 
-PY_HASHES = """
+# <this file> -> c_cpp_loaders -> datasets -> shield_core -> project root
+PROJECT_ROOT = Path(__file__).resolve().parents[3]
+
+# CVEfixes writes the language as 'C' or 'C++'
+CPP_LANGUAGES = "('c', 'c++')"
+
+CPP_HASHES = f"""
     SELECT DISTINCT hash FROM file_change
-    WHERE lower(programming_language) = 'python'
+    WHERE lower(programming_language) IN {CPP_LANGUAGES}
 """
 
 QUERIES = {
-    "file_change": """
+    "file_change": f"""
         SELECT *
         FROM file_change
-        WHERE lower(programming_language) = 'python'
+        WHERE lower(programming_language) IN {CPP_LANGUAGES}
     """,
-    "method_change": """
+    "method_change": f"""
         SELECT *
         FROM method_change
         WHERE file_change_id IN (
             SELECT file_change_id FROM file_change
-            WHERE lower(programming_language) = 'python'
+            WHERE lower(programming_language) IN {CPP_LANGUAGES}
         )
     """,
     "commits": f"""
         SELECT * FROM commits
-        WHERE hash IN ({PY_HASHES})
+        WHERE hash IN ({CPP_HASHES})
     """,
     "fixes": f"""
         SELECT * FROM fixes
-        WHERE hash IN ({PY_HASHES})
+        WHERE hash IN ({CPP_HASHES})
     """,
     "cwe_classification": f"""
         SELECT * FROM cwe_classification
         WHERE cve_id IN (
-            SELECT cve_id FROM fixes WHERE hash IN ({PY_HASHES})
+            SELECT cve_id FROM fixes WHERE hash IN ({CPP_HASHES})
         )
     """,
 }
 
 
-class CVEfixesExtractor:
+class CVEfixesCppExtractor:
     def __init__(self, db_path: Path, output_dir: Path):
         """Initialize the base paths for the class."""
         self.db_path = db_path
@@ -96,26 +113,13 @@ class CVEfixesExtractor:
 
 
 if __name__ == "__main__":
-    # ---------------------------------------------------------
-    # Dynamically configure paths using pathlib to ensure
-    # cross-platform compatibility for the team
-    # ---------------------------------------------------------
+    # Shared database (built once, holds every language)
+    DB_FILE_PATH = PROJECT_ROOT / "data" / "raw" / "CVEfixes.db"
 
-    # __file__ is shield_core/datasets/python_loaders/cvefixes_python_tables_extraction.py
-    current_dir = Path(__file__).resolve().parent
+    # Separate folder from Python so nothing gets overwritten
+    CSV_OUTPUT_DIR = PROJECT_ROOT / "data" / "raw" / "cvefixes_cpp"
 
-    # python_loaders -> datasets -> shield_core -> project root
-    project_root = current_dir.parent.parent.parent
-
-    # Define the path to the SQLite database (located in data/raw)
-    DB_FILE_PATH = project_root / "data" / "raw" / "CVEfixes.db"
-
-    # Define the output directory for the extracted CSV files
-    CSV_OUTPUT_DIR = project_root / "data" / "raw" / "cvefixes_python"
-
-    # Tables required by the plan
     tables_to_extract = ["commits", "fixes", "cwe_classification", "file_change", "method_change"]
 
-    # Initialize and run the extractor
-    extractor = CVEfixesExtractor(db_path=DB_FILE_PATH, output_dir=CSV_OUTPUT_DIR)
+    extractor = CVEfixesCppExtractor(db_path=DB_FILE_PATH, output_dir=CSV_OUTPUT_DIR)
     extractor.extract_all_tables(tables_to_extract)
