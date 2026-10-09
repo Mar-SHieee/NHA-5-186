@@ -1,7 +1,7 @@
-"""Random sample1 of the CVEfixes (Python) parquet, for the Joern spike (W1-P1-02).
+"""Random sample1 of the CVEfixes (C/C++) parquet, for the Joern spike (W1-P1-02).
 
-Reads ``data/interim/cvefixes_python.parquet`` and writes
-``data/interim/cvefixes_python_samples_20.parquet`` (seeded, so the same rows
+Reads ``data/interim/cvefixes_cpp.parquet`` and writes
+``data/interim/cvefixes_cpp_samples_20.parquet`` (seeded, so the same rows
 come out on every run and every machine).
 """
 
@@ -11,14 +11,14 @@ from pathlib import Path
 
 import pandas as pd
 
-# <this file> -> python_loaders -> datasets -> shield_core -> project root
+# <this file> -> c_cpp_loaders -> datasets -> shield_core -> project root
 REPO_ROOT = Path(__file__).resolve().parents[3]
 
 
-class CVEfixesPythonSampler:
-    """Draws a seeded random sample1 from the unified CVEfixes (Python) table."""
+class CVEfixesCppSampler:
+    """Draws a seeded random sample1 from the unified CVEfixes (C/C++) table."""
 
-    NAME = "cvefixes_python"  # input is <NAME>.parquet, output is <NAME>_samples_<n>.parquet
+    NAME = "cvefixes_cpp"  # input is <NAME>.parquet, output is <NAME>_samples_<n>.parquet
     SAMPLE_SIZE = 20
     RANDOM_STATE = 42
 
@@ -26,8 +26,8 @@ class CVEfixesPythonSampler:
     # so it is only named in the error message and never started from here.
     BUILD_STEPS = (
         "shield_core.datasets.cvefixes_convert_db",
-        "shield_core.datasets.python_loaders.cvefixes_python_tables_extraction",
-        "shield_core.datasets.python_loaders.cvefixes_python_loaders",
+        "shield_core.datasets.c_cpp_loaders.cvefixes_cpp_tables_extraction",
+        "shield_core.datasets.c_cpp_loaders.cvefixes_cpp_loaders",
     )
 
     # ---------- setup ----------
@@ -114,7 +114,7 @@ class CVEfixesPythonSampler:
 
 def main() -> None:
     """Create the sample1."""
-    CVEfixesPythonSampler().execute_pipeline()
+    CVEfixesCppSampler().execute_pipeline()
 
 
 if __name__ == "__main__":
