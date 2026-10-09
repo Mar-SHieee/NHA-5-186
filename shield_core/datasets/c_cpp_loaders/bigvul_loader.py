@@ -2,11 +2,11 @@
 Big-Vul loader.
 
 Usage (run from the repository root):
-    python -m shield_core.datasets.bigvul_loader
+    python -m shield_core.datasets.c_cpp_loaders.bigvul_loader
 
 What it does:
     1. Downloads Big-Vul from Hugging Face (only if the raw file is missing)
-       and saves it unchanged to      data/interim/bigvul_full.parquet
+       and saves it unchanged to      data/raw/bigvul_full.parquet
     2. Maps the raw columns into the unified 8-column schema
     3. Runs conform() and validate() from schema.py
     4. Saves the unified dataset to   data/interim/bigvul.parquet
@@ -23,10 +23,10 @@ from shield_core.datasets.schema import conform, validate
 # Paths (parents[2] = repository root, wherever the command is run from)
 # ----------------------------------------------------------------------
 REPO_ROOT = Path(__file__).resolve().parents[3]
+RAW_DIR = REPO_ROOT / "data" / "raw"
 INTERIM_DIR = REPO_ROOT / "data" / "interim"
-FULL_PATH = INTERIM_DIR / "bigvul_full.parquet"  # raw, unchanged
-UNIFIED_PATH = INTERIM_DIR / "bigvul.parquet"  # unified 8-column schema
-
+FULL_PATH = RAW_DIR / "bigvul_full.parquet"
+UNIFIED_PATH = INTERIM_DIR / "bigvul.parquet"
 HF_DATASET = "bstee615/bigvul"
 
 # Raw columns the mapping depends on
@@ -55,7 +55,7 @@ def download_raw() -> None:
 
     # Write to a temporary file first, then rename, so a failed write
     # never leaves a corrupted bigvul_full.parquet behind.
-    INTERIM_DIR.mkdir(parents=True, exist_ok=True)
+    RAW_DIR.mkdir(parents=True, exist_ok=True)
     tmp_path = FULL_PATH.with_suffix(".parquet.tmp")
     try:
         raw.to_parquet(tmp_path, index=False)
@@ -81,7 +81,7 @@ def map_to_unified(raw: pd.DataFrame) -> pd.DataFrame:
     out["code"] = raw["func_before"].where(is_vul, raw["func_after"])
     out["fixed_code"] = raw["func_after"].where(is_vul, pd.NA)
 
-    out["language"] = raw["lang"]
+    out["language"] = raw["lang"]  # normalized by conform() -> to_registry_language()
     out["label"] = raw["vul"].astype(int)
     out["cwe"] = raw["CWE ID"]  # normalized by conform() -> normalize_cwe()
     out["project"] = raw["project"]
