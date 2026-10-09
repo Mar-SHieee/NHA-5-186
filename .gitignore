@@ -46,3 +46,6 @@ venv_new/
 #joern output
 cpg.bin
 export/
+
+# Joern exploration output (local only)
+sample*/

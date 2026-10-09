@@ -61,7 +61,7 @@ CMD ["joern"]
 # DAY 2 TODO (to finish W1-P5-02):
 #  - install Python (same version as the team) and the locked requirements
 #  - install tree-sitter + grammars: python, c, cpp (java only if still in)
-#  - add a smoke test: parse one sample per language (Joern + tree-sitter)
+#  - add a smoke test: parse one sample1 per language (Joern + tree-sitter)
 #  - run as a non-root user
 #  - add a .dockerignore next to this file
 # -------------------------------------------------------------

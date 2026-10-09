@@ -1,5 +1,5 @@
 #!/bin/sh
-# Smoke test: tree-sitter parse + Joern parse, one sample per language.
+# Smoke test: tree-sitter parse + Joern parse, one sample1 per language.
 set -e
 
 python /opt/smoke/smoke_treesitter.py
