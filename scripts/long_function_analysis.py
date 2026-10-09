@@ -76,7 +76,7 @@ if os.path.exists(data_path):
 
     print(f"Total long functions handled: {df['was_truncated'].sum()}")
 else:
-    # Temporary test sample
+    # Temporary test sample1
     long_code = """
     def process_user_data(users):
         results = []
@@ -150,7 +150,7 @@ else:
     df = pd.DataFrame(data)
     df["token_count"] = df["code"].apply(count_tokens)
 
-    # Test strategy on sample
+    # Test strategy on sample1
     df["processed_code"], df["was_truncated"] = zip(
         *df["code"].apply(apply_truncation_policy), strict=False
     )

@@ -221,7 +221,7 @@ def test_create_safe_samples():
         {"code": ["old1", "old2"], "fixed_code": ["new1", pd.NA], "cwe": ["CWE-79", "CWE-79"]}
     )
     out = CVEfixesPythonLoader()._create_safe_samples(df)
-    assert out["code"].tolist() == ["new1"]  # no patched version, no safe sample
+    assert out["code"].tolist() == ["new1"]  # no patched version, no safe sample1
     assert out["label"].tolist() == [0]
     assert out["fixed_code"].isna().all()
     assert out["cwe"].isna().all()

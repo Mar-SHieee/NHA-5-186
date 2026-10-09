@@ -11,7 +11,7 @@ so some "vulnerable" functions are only touched by the commit, not the bug itsel
 
 Pairing the old and the patched function is done on ``file_change_id`` +
 ``signature``. Functions with no match keep ``fixed_code = NA`` and produce no
-safe sample.
+safe sample1.
 """
 
 from __future__ import annotations

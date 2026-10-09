@@ -17,7 +17,7 @@ RANDOM_STATE = 42
 
 
 def create_sample(name: str, input_path: Path) -> None:
-    """Create and save a random sample from one dataset."""
+    """Create and save a random sample1 from one dataset."""
     if not input_path.exists():
         raise FileNotFoundError(f"Dataset not found: {input_path}")
 

@@ -1,4 +1,4 @@
-"""Random sample of the CVEfixes (Python) parquet, for the Joern spike (W1-P1-02).
+"""Random sample1 of the CVEfixes (Python) parquet, for the Joern spike (W1-P1-02).
 
 Reads ``data/interim/cvefixes_python.parquet`` and writes
 ``data/interim/cvefixes_python_samples_20.parquet`` (seeded, so the same rows
@@ -16,7 +16,7 @@ REPO_ROOT = Path(__file__).resolve().parents[3]
 
 
 class CVEfixesPythonSampler:
-    """Draws a seeded random sample from the unified CVEfixes (Python) table."""
+    """Draws a seeded random sample1 from the unified CVEfixes (Python) table."""
 
     NAME = "cvefixes_python"  # input is <NAME>.parquet, output is <NAME>_samples_<n>.parquet
     SAMPLE_SIZE = 20
@@ -73,11 +73,11 @@ class CVEfixesPythonSampler:
         return df.sample(n=self._effective_size(df), random_state=self.random_state)
 
     def _output_path(self, sample_rows: int) -> Path:
-        """Where the sample is written."""
+        """Where the sample1 is written."""
         return self.data_dir / f"{self.NAME}_samples_{sample_rows}.parquet"
 
     def _save_sample(self, sample: pd.DataFrame) -> Path:
-        """Write the sample to the interim folder."""
+        """Write the sample1 to the interim folder."""
         path = self._output_path(len(sample))
         sample.to_parquet(path, index=False)
         return path
@@ -90,7 +90,7 @@ class CVEfixesPythonSampler:
             return path
 
     def _print_logs(self, df: pd.DataFrame, sample: pd.DataFrame, output_path: Path) -> None:
-        """Row counts and the label split of the sample."""
+        """Row counts and the label split of the sample1."""
         vulnerable = int((sample["label"] == 1).sum())
         print(
             f"[{self.NAME}] "
@@ -104,7 +104,7 @@ class CVEfixesPythonSampler:
     # ---------- the only method called from outside ----------
 
     def execute_pipeline(self) -> Path:
-        """Load, sample, save, log. Returns the output path."""
+        """Load, sample1, save, log. Returns the output path."""
         df = self._load_dataset()
         sample = self._draw_sample(df)
         output_path = self._save_sample(sample)
@@ -113,7 +113,7 @@ class CVEfixesPythonSampler:
 
 
 def main() -> None:
-    """Create the sample."""
+    """Create the sample1."""
     CVEfixesPythonSampler().execute_pipeline()
 
 
