@@ -280,7 +280,7 @@ def main():
                     }
                 )
 
-                print(f"{language} sample {index:02d} " f"failed: {exc}")
+                print(f"{language} sample {index:02d} failed: {exc}")
 
         # Save partial results after each language.
         pd.DataFrame(results).to_csv(RESULTS_FILE, index=False)
