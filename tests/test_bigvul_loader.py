@@ -32,7 +32,7 @@ def test_bigvul_vulnerable_mapping():
     assert row["code"] == "int foo() { strcpy(a, b); }"
     assert row["fixed_code"] == "int foo() { return 0; }"
     assert row["label"] == 1
-    assert row["language"] == "C"
+    assert row["language"] == "cpp"
     assert row["cwe"] == ["CWE-119"]
     assert row["project"] == "test-project"
     assert row["commit"] == "abc123"
@@ -67,7 +67,7 @@ def test_bigvul_non_vulnerable_mapping():
     assert row["code"] == "int bar() { return 1; }"
     assert pd.isna(row["fixed_code"])
     assert row["label"] == 0
-    assert row["language"] == "C"
+    assert row["language"] == "cpp"
     assert row["cwe"] == ["CWE-20"]
     assert row["project"] == "test-project"
     assert row["commit"] == "def456"

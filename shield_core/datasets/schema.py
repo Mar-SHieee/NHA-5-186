@@ -9,6 +9,9 @@ import re
 
 import pandas as pd
 
+from languages import registry
+from languages.registry import UnknownLanguageError
+
 SCHEMA_VERSION = "1.0"
 
 COLUMNS = [
@@ -65,25 +68,17 @@ def normalize_cwe(value) -> list[str]:
 
     return result
 
-    if not isinstance(value, (list, tuple)):
-        value = [value]
 
-    result = []
-
-    for item in value:
-        if item is None:
-            continue
-
-        match = re.fullmatch(
-            r"(?:CWE-)?(\d+)",
-            str(item).strip(),
-            re.IGNORECASE,
-        )
-
-        if match:
-            result.append(f"CWE-{int(match.group(1))}")
-
-    return result
+def to_registry_language(value):
+    if value is None or pd.isna(value):
+        return pd.NA
+    text = str(value).strip().lower()
+    try:
+        return registry.get(text).name
+    except UnknownLanguageError:
+        pass
+    spec = registry.language_for_extension("." + text.replace("++", "pp"))
+    return spec.name if spec else pd.NA
 
 
 def conform(df: pd.DataFrame, source: str) -> pd.DataFrame:
@@ -94,6 +89,7 @@ def conform(df: pd.DataFrame, source: str) -> pd.DataFrame:
         if col not in out:
             out[col] = pd.NA
     out["cwe"] = out["cwe"].map(normalize_cwe)
+    out["language"] = out["language"].map(to_registry_language)
     out = out[COLUMNS].astype(DTYPES)
     return out.reset_index(drop=True)
 
@@ -112,6 +108,10 @@ def validate(df: pd.DataFrame) -> list[str]:
         problems.append("label must be 0 or 1")
     if (df["code"].str.strip() == "").any():
         problems.append("empty code rows")
+    known = {spec.name for spec in registry.all_languages()}
+    unknown = sorted(set(df["language"].dropna()) - known)
+    if unknown:
+        problems.append(f"unknown languages: {unknown}")
     for cwes in df["cwe"]:
         if not isinstance(cwes, list):
             problems.append("cwe values must be lists")

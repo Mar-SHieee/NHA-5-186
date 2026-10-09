@@ -30,7 +30,7 @@ def batched(iterable, n):
         yield batch
 
 
-PROJECT_ROOT = Path(__file__).resolve().parents[2]
+PROJECT_ROOT = Path(__file__).resolve().parents[3]
 
 SOURCE = "megavul"
 DEFAULT_PATH = PROJECT_ROOT / "data" / "raw" / "megavul_simple.json"
