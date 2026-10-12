@@ -9,20 +9,14 @@ name = "shield-core"
 version = "0.1.0"
 requires-python = ">=3.10"
 dependencies = [
-    "torch",
-    "transformers",
-    "scikit-learn",
-    "pandas",
-    "pyarrow",
-    "datasets",
-    "ijson",
     "pyyaml",
-    "mlflow",
-    "wandb"
 ]
 
 [project.optional-dependencies]
 dev = ["pytest", "ruff", "pre-commit"]
+data = ["pandas", "pyarrow", "ijson", "datasets"]
+ml = ["torch", "transformers", "scikit-learn"]
+tracking = ["mlflow", "wandb"]
 gnn = ["torch_geometric>=2.8"]
 
 [tool.setuptools.packages.find]
