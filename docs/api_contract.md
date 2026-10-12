@@ -1,6 +1,8 @@
 # SHIELD API Contract
 
 **Contract version:** 1.0 (`schema_version = "1.0"`)
+**Interface version:** 1.0 (`INTERFACE_VERSION`): function signatures and exceptions
+**Schema version:** 1.0 (`SCHEMA_VERSION`): payload fields
 **Status:** Draft for Gate G1 sign-off (W1-P4-02)
 **Implemented in:** Week 5 (`api/`, FastAPI). Until then this document is the source of truth, and the frontend and VS Code extension build against a mock server.
 
@@ -21,7 +23,7 @@ If this file and `interface.py` disagree, **`interface.py` wins**; fix this docu
 | Confidence | Float in `[0, 1]`, calibrated |
 | CWE | Normalized string, e.g. `"CWE-89"` |
 | Language | A language `id` from the LanguageSpec registry (e.g. `"python"`, `"cpp"`). Never hard-coded; fetch the list from `GET /v1/languages` |
-| Versioning | Every result carries `schema_version`. Results from detection also carry `model_version` |
+| Versioning | Every result carries `schema_version`. Results from detection also carry `model_version` .GET /v1/health also reports interface_version.|
 | Auth | API key in header `X-API-Key` (Decision D11) |
 | Timestamps | ISO 8601 UTC, e.g. `2026-10-04T12:30:00Z` |
 
@@ -65,7 +67,7 @@ These map one-to-one to the dataclasses in `shield_core/interface.py`.
 | `function` | string \| null | no | |
 | `start_line` | integer \| null | no | |
 | `end_line` | integer \| null | no | |
-| `taint_paths` | `TaintPath[]` | no (default `[]`) | evidence |
+| `taint_paths` | `TaintPath[]` | no (default `[]`) |evidence for this finding; clients render this first |
 
 ### 2.4 `Result`
 
@@ -75,9 +77,11 @@ These map one-to-one to the dataclasses in `shield_core/interface.py`.
 | `cwe` | string \| null | top CWE; `null` when not vulnerable |
 | `confidence` | number | 0 to 1 |
 | `findings` | `Finding[]` | empty when clean |
-| `taint_paths` | `TaintPath[]` | empty when no data-flow evidence |
+| `taint_paths` | `TaintPath[]` | paths not tied to any single finding; normally empty. Do not duplicate paths already listed in a finding |
 | `model_version` | string | e.g. `"v4-fusion-1.0"`; `"v1-xgb-1.0"` reveals the fallback was used |
 | `schema_version` | string | `"1.0"` |
+
+paths not tied to any single finding; normally empty. Do not duplicate paths already listed in a finding
 
 ### 2.5 `RepoResult`
 
@@ -144,6 +148,8 @@ Scan one piece of code synchronously.
 
 **Response `200`:** a `Result`.
 
+For snippet scans, `TaintStep.file` is the literal `"snippet"` and `Finding.file` is `null`.
+
 ```json
 {
   "vulnerable": true,
@@ -175,6 +181,7 @@ Scan one piece of code synchronously.
   "model_version": "v4-fusion-1.0",
   "schema_version": "1.0"
 }
+
 ```
 
 Backed by `interface.predict(code, language)`.
@@ -245,7 +252,7 @@ Request a candidate fix for a finding.
   "code": "<optional: source text of the affected function>"
 }
 ```
-
+`code` is passed straight through to `suggest_fix(finding, code)`.
 `code` is optional when the server already holds the scanned source (a stored scan). It is required for snippet findings.
 
 **Response `200`:** a `FixResult`.
@@ -322,7 +329,7 @@ Enabled languages, read from the LanguageSpec registry. Clients (web dropdown, V
 `GET /v1/health`
 
 ```json
-{ "status": "ok", "schema_version": "1.0" }
+{ "status": "ok", "schema_version": "1.0", "interface_version": "1.0"}
 ```
 
 `GET /v1/models`
@@ -364,6 +371,17 @@ All errors use one shape:
 
 Model fallback is **not** an error: if V4 fails to load and V1 answers, the response is `200` with `model_version` showing the V1 version.
 
+### Mapping from `shield_core.interface` exceptions
+
+| Python exception | HTTP | `code` |
+|---|---|---|
+| `UnsupportedLanguageError` | 422 | `unsupported_language` |
+| `RepoNotFoundError` | 404 | `not_found` |
+| `ModelUnavailableError` | 503 | `model_unavailable` |
+| any other `Exception` | 500 | `internal_error` |
+
+Bad input shape (malformed JSON, missing field) is rejected by the API layer with 400 before the core is called.
+
 ---
 
 ## 5. Limits and security (initial values, tune in Week 5)
@@ -394,6 +412,7 @@ Model fallback is **not** an error: if V4 fails to load and V1 answers, the resp
 - **Adding an optional field** is allowed within `1.x`; clients must ignore unknown fields.
 - **Removing, renaming, or changing the type of a field** requires a major bump (`2.0`), team agreement, and a Decisions Log row.
 - `schema_version` in every payload lets clients detect a mismatch.
+- `INTERFACE_VERSION` changes when a function signature or a raised exception changes. `SCHEMA_VERSION` changes when a dataclass field changes. A signature change (like adding `code` to `suggest_fix`) bumps the interface version even if the schema is untouched.
 - Contract tests in CI (W4-P5-03) must fail if `interface.py` output drifts from this document.
 
 ---
@@ -404,3 +423,15 @@ Model fallback is **not** an error: if V4 fails to load and V1 answers, the resp
 - [ ] Whether `GET /v1/models` requires an API key
 - [ ] `repo_url` support for private repositories (likely out of scope; GitHub OAuth is Stretch, D11)
 - [ ] Pagination style for very large `RepoResult.files` (possibly a separate paged endpoint if repos are large)
+
+## 9. Sign-off
+
+Interface 1.0 and schema 1.0 are frozen when all five rows are filled in.
+
+| Person | Name  | Date       | Approved |
+|---|-------|------------|---------|
+| P1 | Hatem | 12/10/2026 | [Yes]   |
+| P2 | Eyad  | 12/10/2026 | [Yes]   |
+| P3 | Atef  | 12/10/2026 | [Yes]   |
+| P4 | Bigad | 12/10/2026 | [Yes]   |
+| P5 | Maram | 12/10/2026 | [Yes]   |
