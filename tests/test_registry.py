@@ -1,4 +1,5 @@
 import re
+from pathlib import Path
 
 import pytest
 import yaml
@@ -12,6 +13,8 @@ from languages.registry import (
     UnknownLanguageError,
     load_registry,
 )
+
+GUARDED = ["shield_core/interface.py", "shield_core/cli.py"]
 
 
 def test_all_three_files_load():
@@ -231,3 +234,14 @@ def test_file_that_is_not_a_mapping_is_an_error(tmp_path):
     (tmp_path / "demo.yaml").write_text("- a\n- b\n", encoding="utf-8")
     with pytest.raises(LanguageConfigError, match="mapping"):
         load_registry(tmp_path)
+
+
+def test_no_language_literals_outside_registry():
+    root = Path(__file__).resolve().parents[1]
+    names = [s.name for s in registry.all_languages()]
+    pattern = re.compile(r"""["'](%s)["']""" % "|".join(names))
+    for rel in GUARDED:
+        for n, line in enumerate((root / rel).read_text().splitlines(), 1):
+            if line.lstrip().startswith("#"):
+                continue
+            assert not pattern.search(line), f"{rel}:{n} hardcodes a language: {line.strip()}"

@@ -7,7 +7,7 @@ A vulnerability detection system combining CodeBERT, graph neural networks, and 
 ## Prerequisites
 
 - Git and a GitHub account
-- Python 3.10 or newer (the team will standardize on one version; check `SHIELD_PLAN.md`)
+- Python 3.12 (CI and the team's environments use it; `pyproject.toml` allows 3.10+, but 3.12 is what we test)
 - Docker Desktop (only needed to run Joern; on Windows it requires WSL 2)
 
 ## Getting started (team contributors)

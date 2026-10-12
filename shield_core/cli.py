@@ -1,11 +1,10 @@
 import argparse
 import json
 import sys
-from dataclasses import asdict
 from pathlib import Path
 
 from languages import registry
-from shield_core.interface import predict
+from shield_core.interface import ShieldError, predict
 
 
 def fail(message: str):
@@ -45,8 +44,11 @@ def cmd_scan(path_arg: str, language_arg: str | None):
             return fail(f"unsupported language: {spec.name} / Enabled languages: {enabled}")
 
     code = path.read_text(encoding="utf-8", errors="replace")
-    result = predict(code, spec.name)
-    print(json.dumps(asdict(result), indent=2))
+    try:
+        result = predict(code, spec.name)
+    except ShieldError as e:
+        return fail(str(e))
+    print(json.dumps(result.to_dict(), indent=2))
     return 0
 
 
