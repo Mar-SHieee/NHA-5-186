@@ -33,8 +33,9 @@ def batched(iterable, n):
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 
 SOURCE = "megavul"
-DEFAULT_PATH = PROJECT_ROOT / "data" / "raw" / "megavul_simple.json"
+DEFAULT_PATH = PROJECT_ROOT / "data" / "raw" / "megavul.json"
 DEFAULT_OUT = PROJECT_ROOT / "data" / "interim" / "megavul.parquet"
+HF_DATASET_KAGGLE = "marcdamie/megavul-a-cc-java-vulnerability-dataset"  # [cite: 2]
 
 # Language is not a MegaVul field; it is derived from the extension of file_path.
 # Extensions not listed here are skipped (never guessed).
@@ -54,6 +55,37 @@ def _language(file_path: str | None) -> str | None:
     if not file_path:
         return None
     return _EXT_TO_LANGUAGE.get(PurePosixPath(file_path).suffix.lower())
+
+
+def download_raw() -> None:
+    """Download MegaVul from Kaggle and copy megavul.json to DEFAULT_PATH."""
+    import os
+    import shutil
+
+    import kagglehub
+
+    cache_dir = PROJECT_ROOT / "data" / "cache" / "kagglehub"
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    os.environ["KAGGLEHUB_CACHE"] = str(cache_dir.resolve())
+
+    print(f"Downloading MegaVul from Kaggle ({HF_DATASET_KAGGLE})...")
+    dataset_path = Path(kagglehub.dataset_download(HF_DATASET_KAGGLE))
+
+    source_json = dataset_path / "megavul" / "c_cpp" / "megavul.json"
+
+    if not source_json.exists():
+        found_files = list(dataset_path.glob("**/megavul.json"))
+        found_files = [f for f in found_files if f.name == "megavul.json"]
+        if found_files:
+            source_json = found_files[0]
+        else:
+            raise FileNotFoundError(
+                f"Could not find megavul.json in downloaded dataset at {dataset_path}"
+            )
+
+    DEFAULT_PATH.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy(source_json, DEFAULT_PATH)
+    print(f"Saved raw MegaVul JSON to {DEFAULT_PATH.relative_to(PROJECT_ROOT)}")
 
 
 def _iter_records(path: Path):
@@ -83,7 +115,8 @@ def _to_row(rec: dict) -> dict | None:
         "cwe": cwe_ids if cwe_ids else None,
         "project": rec.get("repo_name"),
         "commit": rec.get("commit_hash"),
-        # "date": not available in MegaVul -> conform() fills it with NaT
+        "date": rec.get("date"),
+        "cve": rec.get("cve_id"),
         "fixed_code": rec.get("func") if is_vul else None,
     }
 
@@ -110,7 +143,11 @@ def _stream_rows(path: Path, limit: int | None, stats: Counter):
 
 def load_megavul(path: str | Path = DEFAULT_PATH, limit: int | None = None) -> pd.DataFrame:
     """Load MegaVul into the unified schema. Use `limit` to try a few records first."""
-    records = _iter_records(Path(path))
+    path = Path(path)
+    if not path.exists():
+        download_raw()
+
+    records = _iter_records(path)
     if limit is not None:
         records = islice(records, limit)
 
@@ -143,6 +180,10 @@ def megavul_to_parquet(
     limit: int | None = None,
 ) -> dict:
     """Stream MegaVul -> unified schema -> parquet."""
+    path = Path(path)
+    if not path.exists():
+        download_raw()
+
     out_path = Path(out_path)
     out_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -160,7 +201,7 @@ def megavul_to_parquet(
     schema = None
 
     try:
-        rows = _stream_rows(Path(path), limit, stats)
+        rows = _stream_rows(path, limit, stats)
 
         for i, chunk in enumerate(batched(rows, chunk_size)):
             df = conform(pd.DataFrame(chunk), SOURCE)

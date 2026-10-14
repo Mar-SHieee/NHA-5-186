@@ -265,13 +265,13 @@ class ParquetRepository:
         return index, name
 
     def _discover(self) -> list[str]:
-        names = [
-            p.stem
-            for p in self._directory.glob("*.parquet")
-            if not any(part in p.name for part in self._excluded)
-        ]
+        # قصر القائمة حصرياً على الملفين المحددين إذا وجدا
+        allowed = ["megavul", "bigvul"]
+        names = [p.stem for p in self._directory.glob("*.parquet") if p.stem in allowed]
         if not names:
-            raise FileNotFoundError(f"No parquet datasets found in {self._directory}")
+            raise FileNotFoundError(
+                f"لم يتم العثور على ملفات megavul أو bigvul في {self._directory}"
+            )
         return sorted(names, key=self._rank)
 
     def load(self) -> dict[str, pd.DataFrame]:

@@ -16,7 +16,8 @@ dependencies = [
     "pyarrow",
     "datasets",
     "ijson",
-    "pyyaml"
+    "pyyaml",
+    "kagglehub"
 ]
 
 [project.optional-dependencies]
