@@ -1,9 +1,54 @@
-name : python
-enabled : true
-extensions : [".py"]
-joern_frontend : PYTHONSRC
-tree_sitter :
-  default : tree_sitter_python
-cwes : []
-sources : []
-sinks : []
+name: python
+enabled: true
+extensions: [".py"]
+joern_frontend: PYTHONSRC
+tree_sitter:
+  default: tree_sitter_python
+cwes:
+  [
+    "CWE-79",
+    "CWE-918",
+    "CWE-22",
+    "CWE-601",
+    "CWE-444",
+    "CWE-613",
+    "CWE-94",
+    "CWE-502",
+    "CWE-89",
+    "CWE-78",
+    "CWE-20",
+    "CWE-400",
+    "CWE-200",
+    "CWE-352",
+  ]
+
+# Taint configuration (W1-P2-03). Evidence: docs/taint_spike.md.
+# All patterns are Joern regexes and must match the WHOLE text, so keep the trailing .*
+# where a prefix match is meant.
+# A source is the call that PRODUCES the value, not a sub-expression of it.
+sources:
+  - { kind: call, code: 'request\.args\[.*' }
+  - { kind: call, code: 'request\.args\.get\(.*' }
+  - { kind: call, code: 'request\.form\[.*' }
+  - { kind: call, code: 'request\.get_json\(.*' }
+  - { kind: call, code: 'input\(.*' }
+  - { kind: call, code: 'sys\.argv\[.*' }
+
+# arg = Joern argument index of the dangerous value. For os.system(x), subprocess.run(x)
+# and pickle.loads(x) index 0 is the module, so the payload is 1; open(x) and eval(x)
+# have no receiver and the payload is also 1. Keyword arguments get index -1 and are NOT
+# covered. 'code' separates same-name calls (our own run() helper vs subprocess.run).
+sinks:
+  - { name: execute, arg: 1, cwe: CWE-89 }
+  - { name: system, code: 'os\.system.*', arg: 1, cwe: CWE-78 }
+  - { name: run, code: 'subprocess\.run.*', arg: 1, cwe: CWE-78 }
+  - { name: open, arg: 1, cwe: CWE-22 }
+  - { name: loads, code: 'pickle\.loads.*', arg: 1, cwe: CWE-502 }
+  - { name: eval, arg: 1, cwe: CWE-95 }
+
+# Regexes on call NAMES. Joern cannot see inside a sanitizer: an unresolved call passes taint
+# through, so a path containing one of these calls is flagged, never dropped.
+# Only calls actually seen inside a flow path are listed (int, escape).
+sanitizers:
+  - "int"
+  - "escape"

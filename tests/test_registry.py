@@ -1,4 +1,5 @@
 import re
+from pathlib import Path
 
 import pytest
 import yaml
@@ -7,9 +8,13 @@ from languages import registry
 from languages.registry import (
     DisabledLanguageError,
     LanguageConfigError,
+    SinkSpec,
+    SourceSpec,
     UnknownLanguageError,
     load_registry,
 )
+
+GUARDED = ["shield_core/interface.py", "shield_core/cli.py"]
 
 
 def test_all_three_files_load():
@@ -79,6 +84,7 @@ BASE = {
     "cwes": [],
     "sources": [],
     "sinks": [],
+    "sanitizers": [],
 }
 REMOVE = object()
 
@@ -100,8 +106,85 @@ def test_a_valid_file_loads(tmp_path):
     assert specs["demo"].cwes == ()
 
 
+def test_sources_sinks_and_sanitizers_are_parsed(tmp_path):
+    write(
+        tmp_path,
+        {
+            "sources": [{"kind": "call", "code": r"request\.args\[.*"}],
+            "sinks": [
+                {"name": "execute", "arg": 1, "cwe": "CWE-89"},
+                {"name": "run", "code": r"subprocess\.run.*", "arg": 1},
+            ],
+            "sanitizers": ["int"],
+        },
+    )
+    spec = load_registry(tmp_path)["demo"]
+    assert spec.sources == (SourceSpec(kind="call", code=r"request\.args\[.*"),)
+    assert spec.sinks[0] == SinkSpec(name="execute", arg=1, cwe="CWE-89")
+    assert spec.sinks[1].code == r"subprocess\.run.*"
+    assert spec.sanitizers == ("int",)
+
+
+def test_every_source_kind_and_arg_from_are_parsed(tmp_path):
+    write(
+        tmp_path,
+        {
+            "sources": [
+                {"kind": "call", "name": "getenv"},
+                {"kind": "argument", "name": "read|recv", "arg": 2},
+                {"kind": "parameter", "name": "argv"},
+            ],
+            "sinks": [{"name": "sprintf", "arg_from": 3, "cwe": "CWE-120"}],
+        },
+    )
+    spec = load_registry(tmp_path)["demo"]
+    assert spec.sources == (
+        SourceSpec(kind="call", name="getenv"),
+        SourceSpec(kind="argument", name="read|recv", arg=2),
+        SourceSpec(kind="parameter", name="argv"),
+    )
+    assert spec.sinks == (SinkSpec(name="sprintf", arg_from=3, cwe="CWE-120"),)
+    assert spec.sinks[0].arg is None
+
+
+def test_cpp_taint_config_matches_the_spike():
+    cpp = registry.get("cpp")
+    kinds = {(s.kind, s.name, s.arg) for s in cpp.sources}
+    assert ("call", "getenv", None) in kinds
+    assert ("argument", "fgets", 1) in kinds  # the CALL as a source gave 0 flows (c03)
+    assert ("argument", "read|recv", 2) in kinds
+    assert ("parameter", "argv", None) in kinds
+    assert {(s.name, s.arg) for s in cpp.sinks} >= {("system", 1), ("strcpy", 2), ("memcpy", 3)}
+    assert "realpath" in cpp.sanitizers
+    assert not any(re.fullmatch(p, "strncpy") for p in cpp.sanitizers)
+
+
 BAD_FILES = [
     ({"sinks": REMOVE}, "missing keys: sinks"),
+    ({"sanitizers": REMOVE}, "missing keys: sanitizers"),
+    ({"sanitizers": "int"}, "'sanitizers' must be a list"),
+    ({"sanitizers": ["("]}, "not a valid regex"),
+    ({"sources": ["eval"]}, "'sources[0]' must be a mapping"),
+    ({"sources": [{"kind": "stdin", "name": "fgets"}]}, "'kind' must be one of"),
+    ({"sources": [{"kind": "argument", "name": "fgets"}]}, "of kind 'argument' needs 'arg'"),
+    ({"sources": [{"kind": "argument", "arg": 1}]}, "of kind 'argument' needs 'name'"),
+    ({"sources": [{"kind": "argument", "name": "fgets", "arg": -1}]}, "'arg' must be an integer"),
+    ({"sources": [{"kind": "argument", "name": "fgets", "arg": True}]}, "'arg' must be an integer"),
+    ({"sources": [{"kind": "call", "name": "getenv", "arg": 1}]}, "only valid for kind 'argument'"),
+    ({"sources": [{"kind": "parameter", "code": "argv"}]}, "of kind 'parameter' needs 'name'"),
+    ({"sources": [{"kind": "parameter", "name": "argv", "arg": 1}]}, "takes only 'name'"),
+    ({"sources": [{"kind": "call"}]}, "needs 'name' or 'code'"),
+    ({"sources": [{"kind": "call", "code": "x", "typo": 1}]}, "unknown keys in 'sources[0]'"),
+    ({"sinks": [{"arg": 1}]}, "is missing: name"),
+    ({"sinks": [{"name": "execute"}]}, "needs one of 'arg' or 'arg_from'"),
+    ({"sinks": [{"name": "execute", "arg": 1, "arg_from": 2}]}, "cannot have both"),
+    ({"sinks": [{"name": "sprintf", "arg_from": 0}]}, "'arg_from' must be an integer >= 1"),
+    ({"sinks": [{"name": "sprintf", "arg_from": "3"}]}, "'arg_from' must be an integer"),
+    ({"sinks": [{"name": "execute", "arg": "1"}]}, "'arg' must be an integer"),
+    ({"sinks": [{"name": "execute", "arg": True}]}, "'arg' must be an integer"),
+    ({"sinks": [{"name": "execute", "arg": -1}]}, "'arg' must be an integer"),
+    ({"sinks": [{"name": "execute", "arg": 1, "cwe": "89"}]}, "invalid 'cwe'"),
+    ({"sinks": [{"name": "(", "arg": 1}]}, "not a valid regex"),
     ({"enabeld": True}, "unknown keys: enabeld"),
     ({"name": "other"}, "must match the file name"),
     ({"name": "Demo"}, "lowercase letters"),
@@ -151,3 +234,14 @@ def test_file_that_is_not_a_mapping_is_an_error(tmp_path):
     (tmp_path / "demo.yaml").write_text("- a\n- b\n", encoding="utf-8")
     with pytest.raises(LanguageConfigError, match="mapping"):
         load_registry(tmp_path)
+
+
+def test_no_language_literals_outside_registry():
+    root = Path(__file__).resolve().parents[1]
+    names = [s.name for s in registry.all_languages()]
+    pattern = re.compile(r"""["'](%s)["']""" % "|".join(names))
+    for rel in GUARDED:
+        for n, line in enumerate((root / rel).read_text().splitlines(), 1):
+            if line.lstrip().startswith("#"):
+                continue
+            assert not pattern.search(line), f"{rel}:{n} hardcodes a language: {line.strip()}"

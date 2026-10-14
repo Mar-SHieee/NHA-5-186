@@ -69,7 +69,9 @@ own nodes as conditional. Whether it helps the model is an experiment.
 x = [one-hot node type (12) | is_source | is_sink | is_sanitizer | CodeBERT embedding of CODE].
 
 - The one-hot and the three flag columns are implemented (15 columns). The flags are all 0
-  until the taint spike (W1-P2-03) fills `source_sink_config` in the LanguageSpec YAML files.
+  in the current converter. The taint spike (W1-P2-03, `docs/taint_spike.md`) has filled the
+  `sources`, `sinks` and `sanitizers` of the LanguageSpec YAML files and defined how the flags
+  are set; wiring them into the converter is W3-P2-03 (see "Taint flags" below).
 - The CodeBERT embedding is frozen CodeBERT over the node's `CODE` text, cached by unique
   string (D20). It is added in Week 2 (W2-P3-04) and is not part of the current converter.
   Stub methods have the text `<empty>`; embedding their `NAME` instead is an open question.
@@ -78,6 +80,37 @@ x = [one-hot node type (12) | is_source | is_sink | is_sanitizer | CodeBERT embe
 - Row order: kept node ids are sorted, so the same file always gives the same rows.
 - Type information (buffer sizes, declared types) is dropped with TYPE and EVAL_TYPE. For C
   memory-safety bugs the only trace is the node text (e.g. `buf[8]`).
+
+### 4.1 Taint flags (from the taint spike, W1-P2-03)
+
+The three flag columns come from the language YAML (`languages/<lang>.yaml`), through the same
+selectors the taint queries use (`shield_core/taint/joern_queries.py`). This is the rule; the
+converter does not implement it yet (W3-P2-03).
+
+| Flag | Set on | Rule |
+|---|---|---|
+| `is_source` | the node a YAML `sources` entry selects | `kind: call` the CALL node; `kind: argument` the ARGUMENT node at index `arg` (an out-parameter such as `fgets` argument 1, never the call); `kind: parameter` the METHOD_PARAMETER_IN node |
+| `is_sink` | the node a YAML `sinks` entry selects | the ARGUMENT node at index `arg` (or every argument from `arg_from`), not the call; the sink call is its AST parent |
+| `is_sanitizer` | a CALL node | its name fully matches a YAML `sanitizers` regex. This marks the call wherever it occurs, which is different from the per-path flag `sanitizer_present` (a path is flagged when an element is such a call or is an argument of one) |
+
+Lowering artifacts that appear in graphs and in taint paths:
+
+- `tmpN` temporaries (`tmp0`, `tmp0 = {}`, `tmp0 = request.args`) are real nodes that carry
+  data flow, so they stay in the graph. They are dropped only from the `TaintStep`s shown to
+  users, together with consecutive duplicates (`clean_steps`).
+- `<metaClassAdapter>` is a synthetic per-class METHOD that Python generates (for example
+  `handler_py11b<metaClassAdapter>`). It is not a user function: do not count it as a function
+  in dataset statistics or per-function features. Whether the converter drops it is an open
+  converter decision (see the stub-method rules in "Open decisions").
+- A C or C++ call to an external function (`system`, `strcpy`, `memcpy`) points to a stub
+  METHOD. Taint queries select the argument nodes of the CALL, so the stub is not needed for
+  flags.
+- A call Joern cannot resolve (all C++ method calls tested, any undefined function) is bound to
+  a stub named `<unresolvedNamespace>.name`: no edge enters the real body, so there is no
+  cross-function data flow through it (taint spike, c16, c18, c19).
+
+Wiring the flags changes the feature meaning, not the raw graph, so it bumps the **converter**
+version and not `schema_version`.
 
 ## 5. Size
 
@@ -166,7 +199,11 @@ Joern 4.0.647, from `joern-parse --list-languages`:
 - Cross-function data flow is untested: REACHING_DEF may not cross call boundaries, and the
   endpoints of the Python CALL edge were not inspected.
 - Source/sink matching must cope with Joern rewrites (`db.cursor().execute(q)` became
-  `tmp0 = db.cursor()` plus `tmp0.execute(q)`).
+  `tmp0 = db.cursor()` plus `tmp0.execute(q)`). RESOLVED by the taint spike: a sink is matched
+  by call name plus argument index, so the rewrite does not matter. The chained-receiver shape
+  was checked on `calls.py`: the sink call recovered through `astParent` is
+  `("execute", "db.cursor().execute(q)")`, the original text (`docs/taint_spike.md`, Part A,
+  section 9).
 - ARGUMENT vs AST overlap: keep both or drop one.
 - Filter rules were tested on five tiny files only; real dataset functions (macros, missing
   headers, incomplete snippets) may parse differently. P1's Joern spike measures this.
@@ -202,3 +239,4 @@ python scripts/graphml_to_pyg.py <folder>/export/export.xml
 - 0.1-draft: first version, Joern 4.0.647, Python samples.
 - 0.1-draft (notes added, no rule change): C and C++ findings, frontend values, stub-method rules.
 - - TYPE_REF recorded as dropped; versioning rules clarified (graph schema vs converter version).
+- 0.1-draft (notes added, no rule change): taint flags defined from the language YAML, lowering artifacts (`tmpN`, `<metaClassAdapter>`, unresolved C++ calls) documented; the converter change is W3-P2-03 and will bump the converter version.

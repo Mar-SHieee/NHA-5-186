@@ -53,7 +53,7 @@ COMPRESSION = "zstd"
 COLUMN_ALIASES = {
     "func_before": "func_before",
     "func_after": "func_after",
-    "target": "target",
+    "target": "vul",
     "cwe": "CWE ID",
     "project": "project",
     "commit": "commit_id",
@@ -97,7 +97,7 @@ def get_dataset_path() -> Path:
         print(f"Using cached Big-Vul CSV files: {dataset_path}")
         return dataset_path
 
-    print(f"Big-Vul CSV files not found in cache. " f"Downloading {KAGGLE_DATASET}...")
+    print(f"Big-Vul CSV files not found in cache. Downloading {KAGGLE_DATASET}...")
 
     dataset_path = Path(kagglehub.dataset_download(KAGGLE_DATASET))
 
@@ -105,7 +105,7 @@ def get_dataset_path() -> Path:
 
     if missing:
         raise FileNotFoundError(
-            f"Missing CSV files after download: {missing}\n" f"Dataset path: {dataset_path}"
+            f"Missing CSV files after download: {missing}\nDataset path: {dataset_path}"
         )
 
     print(f"Big-Vul CSV files available: {dataset_path}")
@@ -248,7 +248,7 @@ def download_raw() -> None:
                     total_rows += table.num_rows
 
                     print(
-                        f"\rTotal raw rows written: " f"{total_rows:,}",
+                        f"\rTotal raw rows written: {total_rows:,}",
                         end="",
                         flush=True,
                     )
@@ -267,13 +267,13 @@ def download_raw() -> None:
         actual_columns = parquet_file.schema_arrow.names
 
         if actual_columns != columns:
-            raise RuntimeError("Output Parquet columns do not match the source CSV " "columns.")
+            raise RuntimeError("Output Parquet columns do not match the source CSV columns.")
 
         actual_rows = parquet_file.metadata.num_rows
 
         if actual_rows != total_rows:
             raise RuntimeError(
-                f"Row count mismatch: wrote {total_rows:,}, " f"Parquet contains {actual_rows:,}."
+                f"Row count mismatch: wrote {total_rows:,}, Parquet contains {actual_rows:,}."
             )
 
         # Replace the old output only after successful completion.
@@ -311,9 +311,17 @@ def map_to_unified(raw: pd.DataFrame) -> pd.DataFrame:
 
     out = pd.DataFrame(index=raw.index)
 
-    out["code"] = raw[aliases["func_before"]]
+    # Use vulnerable code for positive samples,
+    # and fixed code for non-vulnerable samples.
+    out["code"] = raw[aliases["func_before"]].where(
+        is_vulnerable,
+        raw[aliases["func_after"]],
+    )
 
-    out["fixed_code"] = raw[aliases["func_after"]].where(is_vulnerable, None)
+    out["fixed_code"] = raw[aliases["func_after"]].where(
+        is_vulnerable,
+        None,
+    )
 
     out["language"] = raw[aliases["lang"]].fillna("c")
 
@@ -325,10 +333,15 @@ def map_to_unified(raw: pd.DataFrame) -> pd.DataFrame:
 
     out["commit"] = raw[aliases["commit"]].fillna("unknown")
 
-    out["date"] = pd.to_datetime(
-        raw[aliases["date"]],
-        errors="coerce",
-    ).dt.strftime("%Y-%m-%d")
+    date_column = aliases["date"]
+
+    if date_column in raw.columns:
+        out["date"] = pd.to_datetime(
+            raw[date_column],
+            errors="coerce",
+        ).dt.strftime("%Y-%m-%d")
+    else:
+        out["date"] = None
 
     out["cve"] = raw[aliases["cve"]]
 

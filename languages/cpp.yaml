@@ -10,6 +10,65 @@ tree_sitter:
   default: tree_sitter_cpp
   by_extension:
     ".c": tree_sitter_c
-cwes: []
-sources: []
-sinks: []
+cwes:
+  [
+    "CWE-119",
+    "CWE-120",
+    "CWE-125",
+    "CWE-190",
+    "CWE-20",
+    "CWE-200",
+    "CWE-22",
+    "CWE-362",
+    "CWE-400",
+    "CWE-415",
+    "CWE-416",
+    "CWE-476",
+    "CWE-787",
+    "CWE-401",
+    "CWE-835",
+    "CWE-369",
+    "CWE-617",
+    "CWE-772",
+    "CWE-122",
+    "CWE-674",
+  ]
+# Taint configuration (W1-P2-03). Evidence: docs/taint_spike.md, Part B (fixtures c01-c24 in
+# tests/fixtures/taint/c). Every pattern is a Joern regex and must match the WHOLE text.
+# Only entries whose FLOW was observed are active. Entries with an observed argument index but
+# no observed flow are listed in the comments and stay inactive until a fixture confirms them.
+#
+# kind: call      -> the call returns the tainted value.
+# kind: argument  -> the call WRITES the tainted value into argument `arg` (out-parameter).
+#                    The call node itself as a source gives 0 flows (c03 variant), so an
+#                    out-parameter source MUST name the argument, never the call.
+# kind: parameter -> a function parameter holds the tainted value (c04).
+sources:
+  - { kind: call, name: getenv }
+  - { kind: argument, name: fgets, arg: 1 }
+  - { kind: argument, name: "read|recv", arg: 2 }
+  - { kind: argument, name: scanf, arg: 2 } # only the first buffer; extra buffers are args 3,4,...
+  - { kind: parameter, name: argv }
+  # index observed, flow untested: gets(arg 1)
+
+# arg = Joern argument index of the dangerous value (C: system(x) -> 1, memcpy length -> 3).
+# arg_from = every argument from this index on (variadic sinks). CWE labels are provisional:
+# the final C/C++ CWE list is set by the dataset audit at Gate G1 (see `cwes`).
+sinks:
+  - { name: system, arg: 1, cwe: CWE-78 }
+  - { name: fopen, arg: 1, cwe: CWE-22 }
+  - { name: strcpy, arg: 2, cwe: CWE-120 } # the SOURCE string of the copy
+  - { name: memcpy, arg: 3, cwe: CWE-787 } # the LENGTH
+  # index observed, sink flow untested: popen(1), strcat(2), sprintf(arg_from 3), gets(1)
+
+# Regexes on call names. Joern cannot see inside a sanitizer: an unresolved call passes taint
+# through, so a path containing one of these calls is flagged, never dropped. The match looks
+# at path elements that ARE the call (realpath returning its result, c22b) and at the call a
+# path element is an ARGUMENT of (realpath writing an output parameter, c22a).
+# 'shell_escape' is the undefined helper of fixture c23, kept like 'escape' in python.yaml.
+# 'realpath' only canonicalises a path; it does not confine it to a directory.
+sanitizers:
+  - "realpath"
+  - "shell_escape"
+# NOT sanitizers: atoi (the tainted number still reaches memcpy's length, c14);
+# strncpy/strncat (bounding a copy does not stop injection; they also LOSE taint, see the doc).

@@ -1,2 +1,6 @@
 *.sh text eol=lf
 Dockerfile text eol=lf
+* text=auto
+*.py text eol=lf
+*.yaml text eol=lf
+*.md text eol=lf

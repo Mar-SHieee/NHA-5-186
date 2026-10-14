@@ -6,7 +6,7 @@ import pytest
 from languages import registry
 from shield_core import cli
 from shield_core.cli import main
-from shield_core.interface import SCHEMA_VERSION, Result
+from shield_core.interface import SCHEMA_VERSION, ModelUnavailableError, Result
 
 
 @pytest.fixture
@@ -78,3 +78,32 @@ def test_unknown_extension_lists_enabled_languages(tmp_path, capsys):
 def test_missing_file_is_a_clean_error(tmp_path, capsys):
     assert main(["scan", str(tmp_path / "nope.py")]) == 2
     assert "file not found" in capsys.readouterr().err
+
+
+def test_interface_error_is_a_clean_error(tmp_path, capsys, monkeypatch):
+    f = tmp_path / "x.py"
+    f.write_text("print('hi')\n")
+
+    def boom(code, language):
+        raise ModelUnavailableError("no model could be loaded")
+
+    monkeypatch.setattr(cli, "predict", boom)
+
+    assert main(["scan", str(f)]) == 2
+
+    captured = capsys.readouterr()
+    assert "no model could be loaded" in captured.err
+    assert captured.out == ""
+
+
+def test_unexpected_error_is_not_swallowed(tmp_path, monkeypatch):
+    f = tmp_path / "x.py"
+    f.write_text("print('hi')\n")
+
+    def bug(code, language):
+        raise KeyError("a real bug")
+
+    monkeypatch.setattr(cli, "predict", bug)
+
+    with pytest.raises(KeyError):
+        main(["scan", str(f)])

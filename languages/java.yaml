@@ -8,3 +8,4 @@ tree_sitter:
 cwes: []
 sources: []
 sinks: []
+sanitizers: []

@@ -1,12 +1,33 @@
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass, field
+from pathlib import Path
 from typing import Literal, Optional
 
-SCHEMA_VERSION = "1.0"
+from languages import registry
+
+INTERFACE_VERSION = "1.0"  # covers the signatures and exceptions
+SCHEMA_VERSION = "1.0"  # covers the payload fields
+
 FIX_STATUS = Literal["ok", "no_fix_available", "rejected", "error"]
 FIX_METHOD = Literal["template", "codet5"]
-_ENABLED_LANGUAGES = ["python", "cpp"]
+VERDICT = Literal["PASS", "FAIL"]
+
+
+class ShieldError(Exception):
+    """Base class for every error the core interface raises on purpose."""
+
+
+class UnsupportedLanguageError(ShieldError, ValueError):
+    """Language is unknown or disabled. HTTP 422 `unsupported_language`."""
+
+
+class RepoNotFoundError(ShieldError, FileNotFoundError):
+    """scan_repo() got a path that is not a directory. HTTP 404 `not_found`."""
+
+
+class ModelUnavailableError(ShieldError, RuntimeError):
+    """No model could be loaded, not even the V1 fallback. HTTP 503 `model_unavailable`."""
 
 
 class _Serializable:
@@ -14,16 +35,16 @@ class _Serializable:
         return asdict(self)
 
 
-@dataclass
 # Each step is one line where the dangerous data passes through.
+@dataclass
 class TaintStep(_Serializable):
     file: str
     line: int
     code: str = ""
 
 
-@dataclass
 # It strings the steps together and says where the data started and where it ended up.
+@dataclass
 class TaintPath(_Serializable):
     source: str
     sink: str
@@ -31,8 +52,8 @@ class TaintPath(_Serializable):
     sanitizer_present: bool = False
 
 
-@dataclass
 # It packages the vulnerability type, location and confidence, and attaches the evidence.
+@dataclass
 class Finding(_Serializable):
     cwe: str
     confidence: float
@@ -44,20 +65,22 @@ class Finding(_Serializable):
     taint_paths: list[TaintPath] = field(default_factory=list)
 
 
-@dataclass
 # If you scan the file with predict(code, "python"), you get this back.
+@dataclass
 class Result(_Serializable):
     vulnerable: bool
     cwe: Optional[str]
     confidence: float
     findings: list[Finding] = field(default_factory=list)
-    taintPaths: list[TaintPath] = field(default_factory=list)
+    # paths not tied to any single finding; normally empty.
+    # Do not duplicate paths already listed in a finding
+    taint_paths: list[TaintPath] = field(default_factory=list)
     model_version: str = "stub"
     schema_version: str = SCHEMA_VERSION
 
 
-@dataclass
 # the answer to one scan_repo() call
+@dataclass
 class RepoResult(_Serializable):
     files: dict[str, Result] = field(default_factory=dict)
     cwe_distribution: dict[str, int] = field(default_factory=dict)
@@ -65,18 +88,18 @@ class RepoResult(_Serializable):
     schema_version: str = SCHEMA_VERSION
 
 
-@dataclass
 # did the proposed fix pass the checks?
+@dataclass
 class VerificationReport(_Serializable):
     syntax_ok: bool
     tests_ok: Optional[bool]
     redetect_ok: bool
-    verdict: str  # "PASS" | "FAIL"
+    verdict: VERDICT  # "PASS" | "FAIL"
     notes: str = ""
 
 
+# the answer to one suggest_fix() callI
 @dataclass
-# the answer to one suggest_fix() call
 class FixResult(_Serializable):
     finding: Finding
     status: FIX_STATUS
@@ -90,14 +113,16 @@ class FixResult(_Serializable):
 
 def predict(code: str, language: str) -> Result:
     _check_language(language)
-    return Result(vulnerable=False, cwe=None, confidence=0)
+    return Result(vulnerable=False, cwe=None, confidence=0.0)
 
 
 def scan_repo(path: str) -> RepoResult:
+    if not Path(path).is_dir():
+        raise RepoNotFoundError(f"{path} is not a directory")
     return RepoResult()
 
 
-def suggest_fix(finding: Finding) -> FixResult:
+def suggest_fix(finding: Finding, code: Optional[str] = None) -> FixResult:
     return FixResult(
         finding=finding,
         status="no_fix_available",
@@ -107,41 +132,7 @@ def suggest_fix(finding: Finding) -> FixResult:
 
 
 def _check_language(language: str) -> None:
-    # from shield_core.languages.registry import enabled_languages
-    if language not in _ENABLED_LANGUAGES:
-        raise ValueError(f"unsupported language {language}")
-
-
-"""
-Answer json of Result dataclass.
-    {
-      "vulnerable": true,
-      "cwe": "CWE-89",
-      "confidence": 0.91,
-      "findings": [
-        {
-          "cwe": "CWE-89",
-          "confidence": 0.91,
-          "language": "python",
-          "file": "app.py",
-          "function": "get_user",
-          "start_line": 4,
-          "end_line": 8,
-          "taint_paths": [
-            {
-              "source": "request.args",
-              "sink": "cursor.execute",
-              "sanitizer_present": false,
-              "steps": [
-                {"file": "app.py", "line": 5, "code": "user_id = request.args[\"id\"]"},
-                {"file": "app.py", "line": 6, "code": "query = \"SELECT ... \" + user_id"},
-                {"file": "app.py", "line": 7, "code": "cursor.execute(query)"}
-              ]
-            }
-          ]
-        }
-      ],
-      "model_version": "v4-fusion-1.0",
-      "schema_version": "1.0"
-    }
-"""
+    try:
+        registry.require_enabled(language)
+    except registry.RegistryError as e:
+        raise UnsupportedLanguageError(str(e)) from e
