@@ -296,13 +296,13 @@ class ParquetRepository:
         return (self._priority.index(name) if name in self._priority else len(self._priority), name)
 
     def _discover(self) -> list[str]:
-        names = [
-            p.stem
-            for p in self._directory.glob("*.parquet")
-            if not any(part in p.stem.lower() for part in self._excluded)
-        ]
+        # Restrict deduplication to MegaVul and Big-Vul.
+        allowed = {"megavul", "bigvul"}
+        names = [p.stem for p in self._directory.glob("*.parquet") if p.stem.lower() in allowed]
         if not names:
-            raise FileNotFoundError(f"No source parquet datasets found in {self._directory}")
+            raise FileNotFoundError(
+                f"No megavul or bigvul parquet files found in {self._directory}"
+            )
         return sorted(names, key=self._rank)
 
     def load(self) -> dict[str, pd.DataFrame]:
