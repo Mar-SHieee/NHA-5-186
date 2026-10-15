@@ -62,7 +62,7 @@ Rules learned:
 
 Folder: `tests/fixtures/taint/python/`. Each file has `# EXPECT:` written before running. Ground truth is what a human reading the code concludes.
 
-Totals: **33 sources, 33 sinks, 26 flows** at the default depth. The 7 sinks without a flow are py02, py05, py10, py13 (all correct) and py11, py12b, py12e (known misses). With `maxCallDepth = 8`, py12b and py12e were recovered and py11 stayed missing.
+Totals: **35 sources, 35 sinks, 28 flows** at the default depth (33, 33 and 26 before py19 and py20 were added for D35). The 7 sinks without a flow are py02, py05, py10, py13 (all correct) and py11, py12b, py12e (known misses). With `maxCallDepth = 8`, py12b and py12e were recovered and py11 stayed missing.
 
 | ID | Shape | Ground truth | Joern | Verdict |
 |---|---|---|---|---|
@@ -87,6 +87,10 @@ Totals: **33 sources, 33 sinks, 26 flows** at the default depth. The 7 sinks wit
 | py15b | `r = Repo(); r.build(...)` | flow | flow | path enters `build` (resolved) |
 | py16a-e | `os.system`, `subprocess.run`, `open`, `pickle.loads`, `eval` | flow | flow x5 | ok |
 | py17a-d | `input()`, `sys.argv[1]`, `request.form[...]`, `request.get_json()` | flow | flow x4 | ok |
+| py19 | `subprocess.run(["ping", "-c", "1", host], check = True)`: argument list, no shell (a correct CWE-78 fix, D35) | not exploitable | flow | expected false fail; the tainted list element reaches argument 1; sanitizer flag `-` |
+| py20 | `resolve()` plus an `is_relative_to` guard before `open(target)` (a correct CWE-22 fix, D35) | not exploitable | flow | expected false fail; `resolve()`, `/` and the guard do not remove taint; sanitizer flag `-` |
+
+py18 is intentionally unused: survey fixture 8.1 (constant query, tainted value as argument 2) is the same shape as py13. py19 and py20 are written with `EXPECT: flow` like py14, because the code is safe but Joern is expected to over-report; they need no entry in `KNOWN_FALSE_POSITIVES`.
 
 Prediction record: py15a and py15b were predicted to possibly resolve differently; **wrong**, both enter the callee body (`... return ... -> RET -> self.build(...)` and `-> r.build(...)`).
 
@@ -109,6 +113,7 @@ Prediction record: py15a and py15b were predicted to possibly resolve differentl
 5. **Joern cannot know that `int()` sanitizes** (py14): the flow is reported, and `int(request.args["id"])` appears as a path element, so a sanitizer-name scan can catch it. (OBSERVED)
 6. **Sinks match by name only** (receiver type unknown, section 4). (OBSERVED)
 7. **Keyword arguments are not positional** (index -1), so sinks defined as `argument(1)` miss keyword-passed taint. UNTESTED beyond the printed index.
+8. **A correct fix can still be reported** (py19, py20; D35). A fixed CWE-78 shape (argument list, no shell) and a fixed CWE-22 shape (`resolve()` plus an `is_relative_to` guard) both still give a flow, with no sanitizer flag. (OBSERVED) The vulnerable shapes in py16 (`subprocess.run(..., shell = True)` and `open(...)`) also give a flow, so for these two sink classes a flow does not tell fixed code from unfixed code. (INFERENCE: it compares py16 with py19 and py20, and the code is not identical before and after a fix.) Re-detection is therefore not evidence of a fix for CWE-78 and CWE-22. Not tested: a validation call (`re.fullmatch` plus an abort) before the sink. See `docs/fix_template_survey.md` Section 7 and decision D35.
 
 ### Lowering artifacts seen in paths
 
@@ -167,6 +172,7 @@ sanitizers: []   # observed as path elements: int(...), a helper named escape(..
 ## 9. Python items still open (all small)
 
 - [x] **Chained-receiver sink check** (closes the caveat in section 6). OBSERVED on `tests/fixtures/joern/calls.py`, where the sink is `db.cursor().execute(q)`: 1 source, 1 sink, 1 flow, and `f.elements.last.astParent` is `("execute", "db.cursor().execute(q)")`. It is the `execute` call with its original source text, not the `tmp0` assignment. So the sink call is recovered for a chained receiver as well; section 6 and `TaintPath.sink` need no special case.
+- [x] **D35 fixtures** (survey Section 8). 8.1 is covered by py13 (no flow, OBSERVED). 8.2 and 8.3 are py19 and py20: both flow (OBSERVED, section 11). Open: the CWE-78 shape with a validation call before `subprocess.run`, and `shlex.quote` as a sanitizer (the name also matches `urllib.parse.quote`; suggested answer: do not add it by bare name).
 - [ ] Add `tests/fixtures/taint` to the ruff exclude in `pyproject.toml` (fixtures use undefined names on purpose).
 - [ ] Rename the two `handler` functions in py01/py02, or keep identifying them by file name.
 - [ ] Optional extra fixtures: keyword-argument sink, callback, Flask-route entry point, `*args`.
@@ -211,11 +217,12 @@ OBSERVED (Joern 4.0.647, image `shield-joern`, the prediction made before the ru
 
 | Run | Counts | Verdicts |
 |---|---|---|
-| default depth 4 | 33 sources, 33 sinks, 26 flows | 29 OK, 3 KNOWN-MISS (py11, py12b, py12e), 1 KNOWN-FP (py07b), 0 UNEXPECTED |
-| `--max-depth 8` | 33 sources, 33 sinks, 28 flows | 31 OK, 1 KNOWN-MISS (py11), 1 KNOWN-FP (py07b), 0 UNEXPECTED |
+| default depth 4 | 35 sources, 35 sinks, 28 flows | 31 OK, 3 KNOWN-MISS (py11, py12b, py12e), 1 KNOWN-FP (py07b), 0 UNEXPECTED (rerun with py19 and py20 added, 2026-10-15) |
+| `--max-depth 8` | 33 sources, 33 sinks, 28 flows | 31 OK, 1 KNOWN-MISS (py11), 1 KNOWN-FP (py07b), 0 UNEXPECTED (measured before py19 and py20 were added; not rerun) |
 
-- The sanitizer column is `yes` for py14 only (through `int(...)`) and `-` on every other row.
-- The 26 flows agree with section 5, and so do the four correct negative controls (py02, py05, py10, py13).
+- The sanitizer column is `yes` for py14 only (through `int(...)`) and `-` on every other row, including py19 and py20.
+- py19 and py20 report a flow and are scored OK because their `EXPECT:` line says `flow`. The 28 flows at depth 4 are the 26 older ones plus these two; all other rows are unchanged.
+- The 26 older flows agree with section 5, and so do the four correct negative controls (py02, py05, py10, py13).
 - Depth 8 recovers exactly py12b and py12e; py11 stays missing, as in section 6.
 - The driver reproduces the interactive results of sections 4 to 6 with queries generated from `languages/python.yaml`, so the YAML is a faithful copy of the verified definitions.
 
