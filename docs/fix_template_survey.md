@@ -68,9 +68,9 @@ apply, what re-detection can verify, and what other evidence is needed.
 
 | CWE | Standard fix | Template | Re-detection | Other evidence needed |
 | --- | --- | --- | --- | --- |
-| Python 89, SQL injection | Parameterized query | Medium | Strong (to confirm) | Syntax check, tests |
-| Python 78, OS command injection | Argument list, no shell, validated input | Medium | Weak, false fail likely | Syntactic check (no `shell=True`), test |
-| Python 22, path traversal | Resolve and confine to a base directory | Medium | None, false fail | Test with `../` and absolute paths |
+| Python 89, SQL injection | Parameterized query | Medium | Strong (observed, py13: no flow) | Syntax check, tests |
+| Python 78, OS command injection | Argument list, no shell, validated input | Medium | Weak/None, false fail observed (py19); vulnerable shape also flows (py16b) | Syntactic check (no `shell=True`), test |
+| Python 22, path traversal | Resolve and confine to a base directory | Medium | None, false fail observed (py20); vulnerable shape also flows (py16c) | Test with `../` and absolute paths |
 | C 120 and 787, unbounded copy or length | Bounded copy, length check | Medium to Hard | None, false pass or false fail | Compile, ASan test, fuzz |
 | C format string (134) | Constant format string | Easy | Strong once a sink is added | Syntax check |
 
@@ -110,7 +110,7 @@ Must not apply when:
 - a `LIKE` pattern is built with `%` around the input. The `%` belongs in the parameter value.
 - the query is assembled conditionally from several pieces.
 
-Re-detection: Strong, to confirm with a fixture. The configured sink is `execute` argument 1,
+Re-detection: Strong (observed with fixture py13: no flow). The configured sink is `execute` argument 1,
 which is the SQL text. After the fix the text is a constant and the tainted value sits in argument 2,
 which is not a sink argument, so the flow should disappear. This proves only that the SQL text no
 longer depends on input. It does not prove the placeholder style matches the driver.
@@ -150,7 +150,7 @@ was doing real work.
 Must not apply when the string uses shell features, when the value is part of a larger quoted
 expression, or when the command name itself comes from input.
 
-Re-detection: Weak, and likely a false fail. The configuration covers `os.system` and
+Re-detection: Weak/None, and a false fail (observed with fixture py19: a correct fix is still reported). The configuration covers `os.system` and
 `subprocess.run` positional argument 1 only, and cannot see `shell=True`. After the correct fix the
 tainted value is an element of a list in argument 1. We expect taint to follow it, so the detector
 would still report a correct fix. This must be confirmed with a fixture. Replacing `os.system` with
@@ -194,7 +194,7 @@ directory, there is nothing to confine to and the template must not apply.
 Must not apply when the path is meant to be absolute, when several directories are allowed, or when
 a race between the check and the open matters (check-then-use is not atomic).
 
-Re-detection: None, and a false fail. The check is a guard, and `resolve()` and `/` are calls Joern
+Re-detection: None, and a false fail (observed with fixture py20). The check is a guard, and `resolve()` and `/` are calls Joern
 passes taint through, so the value still reaches `open` argument 1. `resolve` must not be added to
 the sanitizer list, for the same reason `realpath` is not a confinement.
 
@@ -262,17 +262,26 @@ For fixes where re-detection is None, the evidence has to come from compiling wi
 the existing tests, and re-running the triggering input under AddressSanitizer and
 UndefinedBehaviorSanitizer.
 
-## 7. Decision needed: the verdict for hard-to-verify fixes
+## 7. Decision: the verdict for hard-to-verify fixes (D35, decided)
 
-`VerificationReport.verdict` is `"PASS"` or `"FAIL"`. Proposal:
+Status: decided by the team (reported 2026-10-15), logged as D35 in `SHIELD_PLAN.md`. Evidence:
+`docs/taint_spike.md` (py13, py16, py19, py20). Notes-only; no field added; `INTERFACE_VERSION` and
+`SCHEMA_VERSION` stay `"1.0"`.
 
-- PASS needs `syntax_ok` and `redetect_ok` and `tests_ok` not false.
-- For fix classes rated Weak or None in this document, re-detection cannot be the evidence. The
-  result should say so in `verification.notes` and must not be shown as "verified" until a test or a
-  syntactic check passes.
+`VerificationReport.verdict` is `"PASS"` or `"FAIL"`. Rule:
 
-This touches the frozen interface and the UI wording, so it needs the team's decision before the
-Friday freeze.
+- Every fix template carries a re-detection rating (Strong, Weak or None) in the template registry.
+  It is internal metadata, not part of the public interface.
+- Strong classes (Python CWE-89): PASS needs `syntax_ok` and `redetect_ok` and `tests_ok` not false.
+- Weak/None classes (Python CWE-78 and CWE-22; C CWE-120/787 in Week 3): PASS needs `syntax_ok` and
+  the class's syntactic check and `tests_ok` not false. `redetect_ok` stores the real detector
+  result and is not a gate.
+- `verification.notes` starts with one line listing the checks that ran, for example
+  `[evidence] syntax=ok; redetect=false(not decisive); pattern_check=ok; tests=not_run. Not verified by re-detection.`
+- Clients show which checks ran and use the word "verified" only when every configured check for
+  that class ran and passed.
+- If the UI later needs the levels machine-readable, add an optional field in a 1.x schema bump
+  before W5-P4-03.
 
 ## 8. To confirm before the templates are built
 

@@ -99,10 +99,10 @@ paths not tied to any single finding; normally empty. Do not duplicate paths alr
 | `syntax_ok` | boolean | patched code re-parses (tree-sitter) |
 | `tests_ok` | boolean \| null | `null` = no tests found / not run |
 | `redetect_ok` | boolean | detector now says "not vulnerable" |
-| `verdict` | `"PASS"` \| `"FAIL"` | `FAIL` if `syntax_ok` or `redetect_ok` is false, or `tests_ok` is `false`. `tests_ok = null` never causes a `FAIL` |
-| `notes` | string | human-readable detail |
+| `verdict` | `"PASS"` \| `"FAIL"` | For a fix class whose re-detection is rated Strong: `FAIL` if `syntax_ok` or `redetect_ok` is false, or `tests_ok` is `false`. For a class rated Weak or None (re-detection cannot tell fixed code from unfixed code, D35): `redetect_ok` records the detector's real result but does not decide the verdict; `FAIL` if `syntax_ok` is false, the class's syntactic check fails, or `tests_ok` is `false`. `tests_ok = null` never causes a `FAIL` |
+| `notes` | string | human-readable detail. Starts with one line listing the checks that ran, for example `[evidence] syntax=ok; redetect=false(not decisive); pattern_check=ok; tests=not_run. Not verified by re-detection.` |
 
-Verification is a **soft check, not a proof** (Plan Section 4.1). Clients should display which checks actually ran.
+Verification is a **soft check, not a proof** (Plan Section 4.1). Clients should display which checks actually ran, and use the word "verified" only when every configured check for that class ran and passed. A `PASS` on a Weak or None class is never described as verified by re-detection (D35).
 
 ### 2.7 `FixResult`
 
@@ -271,7 +271,7 @@ Request a candidate fix for a finding.
     "tests_ok": null,
     "redetect_ok": true,
     "verdict": "PASS",
-    "notes": "No test suite found; verification is syntax + re-detection only."
+    "notes": "[evidence] syntax=ok; redetect=true; tests=not_run. No test suite found; verification is syntax + re-detection only."
   },
   "message": "",
   "schema_version": "1.0"
