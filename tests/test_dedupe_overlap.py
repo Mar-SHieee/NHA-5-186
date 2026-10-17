@@ -90,6 +90,6 @@ def test_normalized_overlap_between_megavul_and_bigvul() -> None:
     print(f"Big-Vul unique normalized hashes: {len(hash_sets['Big-Vul']):,}")
     print(f"Shared normalized hashes: {len(shared):,}")
 
-    assert (
-        not shared
-    ), f"Found {len(shared):,} shared normalized hashes between MegaVul and Big-Vul."
+    assert not shared, (
+        f"Found {len(shared):,} shared normalized hashes between MegaVul and Big-Vul."
+    )
