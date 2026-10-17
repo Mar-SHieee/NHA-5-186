@@ -7,6 +7,7 @@ import yaml
 from languages import registry
 from languages.registry import (
     DisabledLanguageError,
+    FixTemplateSpec,
     LanguageConfigError,
     SinkSpec,
     SourceSpec,
@@ -210,6 +211,87 @@ def test_broken_files_are_rejected_with_a_clear_message(tmp_path, changes, expec
     with pytest.raises(LanguageConfigError, match=re.escape(expected)) as info:
         load_registry(tmp_path)
     assert "demo.yaml" in str(info.value)
+
+
+# ----------------------------- fix_templates (W2-P4-03) ---------------------------------
+
+SQL = {"cwe": "CWE-89", "rating": "strong", "template": "t_sql", "pattern_check": "c_sql"}
+CMD = {"cwe": "CWE-78", "rating": "none", "template": "t_cmd", "pattern_check": "c_cmd"}
+WITH_CWES = {"cwes": ["CWE-89", "CWE-78"]}
+
+
+def test_fix_templates_are_optional_and_default_to_empty(tmp_path):
+    write(tmp_path)
+    assert load_registry(tmp_path)["demo"].fix_templates == ()
+
+
+def test_fix_templates_are_parsed(tmp_path):
+    write(tmp_path, {**WITH_CWES, "fix_templates": [SQL, CMD]})
+    spec = load_registry(tmp_path)["demo"]
+    assert spec.fix_templates == (
+        FixTemplateSpec("CWE-89", "strong", "t_sql", "c_sql"),
+        FixTemplateSpec("CWE-78", "none", "t_cmd", "c_cmd"),
+    )
+    assert spec.fix_template("CWE-78") == spec.fix_templates[1]
+    assert spec.fix_template("CWE-22") is None
+
+
+def test_an_explicit_empty_list_is_allowed(tmp_path):
+    write(tmp_path, {"fix_templates": []})
+    assert load_registry(tmp_path)["demo"].fix_templates == ()
+
+
+@pytest.mark.parametrize("rating", ["strong", "weak", "none"])
+def test_every_rating_is_accepted(tmp_path, rating):
+    write(tmp_path, {**WITH_CWES, "fix_templates": [{**SQL, "rating": rating}]})
+    assert load_registry(tmp_path)["demo"].fix_templates[0].rating == rating
+
+
+BAD_FIX_TEMPLATES = [
+    ({"fix_templates": None}, "write 'fix_templates: []'"),
+    ({"fix_templates": "sql"}, "'fix_templates' must be a list"),
+    ({"fix_templates": ["CWE-89"]}, "'fix_templates[0]' must be a mapping"),
+    ({"fix_templates": [{**SQL, "typo": 1}]}, "unknown keys in 'fix_templates[0]'"),
+    ({"fix_templates": [{"cwe": "CWE-89"}]}, "is missing: rating, template, pattern_check"),
+    ({"fix_templates": [{**SQL, "cwe": "89"}]}, "invalid 'cwe'"),
+    ({"fix_templates": [{**SQL, "cwe": "CWE-999"}]}, "not in 'cwes'"),
+    ({"fix_templates": [SQL, SQL]}, "repeats 'CWE-89'"),
+    ({"fix_templates": [{**SQL, "rating": "Strong"}]}, "'rating' must be one of"),
+    ({"fix_templates": [{**SQL, "rating": "high"}]}, "'rating' must be one of"),
+    ({"fix_templates": [{**SQL, "template": ""}]}, "'template' must be a lowercase identifier"),
+    ({"fix_templates": [{**SQL, "template": "Sql-Fix"}]}, "'template' must be a lowercase"),
+    ({"fix_templates": [{**SQL, "pattern_check": 5}]}, "'pattern_check' must be a lowercase"),
+]
+
+
+@pytest.mark.parametrize(("changes", "expected"), BAD_FIX_TEMPLATES)
+def test_broken_fix_templates_are_rejected(tmp_path, changes, expected):
+    write(tmp_path, {**WITH_CWES, **changes})
+    with pytest.raises(LanguageConfigError, match=re.escape(expected)) as info:
+        load_registry(tmp_path)
+    assert "demo.yaml" in str(info.value)
+
+
+def test_python_has_the_three_templates():
+    python = registry.get("python")
+    assert [(t.cwe, t.rating) for t in python.fix_templates] == [
+        ("CWE-89", "strong"),
+        ("CWE-78", "none"),
+        ("CWE-22", "none"),
+    ]
+    assert python.fix_template("CWE-89") == FixTemplateSpec(
+        "CWE-89", "strong", "sql_parameterize", "execute_literal_sql"
+    )
+
+
+def test_cpp_and_java_have_no_templates_yet():
+    assert registry.get("cpp").fix_templates == ()
+    assert registry.get("java").fix_templates == ()
+
+
+def test_every_template_cwe_is_a_cwe_of_its_language():
+    for spec in registry.all_languages():
+        assert {t.cwe for t in spec.fix_templates} <= set(spec.cwes)
 
 
 def test_extension_cannot_belong_to_two_languages(tmp_path):

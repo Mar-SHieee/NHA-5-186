@@ -52,3 +52,14 @@ sinks:
 sanitizers:
   - "int"
   - "escape"
+
+# Fix templates. Metadata only: the rewrite code is shield_core/models/fixgen, the
+# syntactic check is shield_core/verify/pattern_checks.py, both found by the names below.
+# rating = re-detection rating of the class (D35). Evidence: docs/taint_spike.md
+#   CWE-89 strong: a bound parameter gives no flow (py13).
+#   CWE-78 / CWE-22 none: the correct fix still flows (py19, py20), so the verdict comes from the
+#   pattern check, not from re-detection.
+fix_templates:
+  - { cwe: CWE-89, rating: strong, template: sql_parameterize, pattern_check: execute_literal_sql }
+  - { cwe: CWE-78, rating: none, template: command_argv, pattern_check: argv_list_no_shell }
+  - { cwe: CWE-22, rating: none, template: path_confine, pattern_check: resolve_confine_before_open }
