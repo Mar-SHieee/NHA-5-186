@@ -53,6 +53,7 @@ Input:
 ```python
 import psycopg2
 
+
 def get_user(request, cursor):
     user_id = request.args["id"]
     query = "SELECT * FROM users WHERE id = " + user_id
@@ -62,6 +63,7 @@ Output (`applied=True`, imports `()`): the assignment is removed and the value b
 The placeholder is `%s` because `psycopg2` is imported (`?` for `sqlite3`).
 ```python
 import psycopg2
+
 
 def get_user(request, cursor):
     user_id = request.args["id"]
@@ -80,6 +82,7 @@ Input:
 ```python
 import os
 
+
 def ping(request):
     host = request.form["host"]
     os.system("ping -c 1 " + host)
@@ -87,6 +90,7 @@ def ping(request):
 Output (`applied=True`, imports `("import subprocess", "import re")`):
 ```python
 import os
+
 
 def ping(request):
     host = request.form["host"]
@@ -105,6 +109,7 @@ Input:
 ```python
 import os
 
+
 def read(request):
     name = request.args["file"]
     with open(os.path.join(UPLOAD_DIR, name)) as f:
@@ -113,6 +118,7 @@ def read(request):
 Output (`applied=True`, imports `("from pathlib import Path",)`):
 ```python
 import os
+
 
 def read(request):
     name = request.args["file"]
