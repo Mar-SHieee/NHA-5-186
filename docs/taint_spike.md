@@ -62,7 +62,7 @@ Rules learned:
 
 Folder: `tests/fixtures/taint/python/`. Each file has `# EXPECT:` written before running. Ground truth is what a human reading the code concludes.
 
-Totals: **35 sources, 35 sinks, 28 flows** at the default depth (33, 33 and 26 before py19 and py20 were added for D35). The 7 sinks without a flow are py02, py05, py10, py13 (all correct) and py11, py12b, py12e (known misses). With `maxCallDepth = 8`, py12b and py12e were recovered and py11 stayed missing.
+Totals: **36 sources, 36 sinks, 28 flows** at the default depth (35, 35 and 28 before py21 was added for W2-P4-03; 33, 33 and 26 before py19 and py20 were added for D35). The 8 sinks without a flow are py02, py05, py10, py13, py21 (all correct) and py11, py12b, py12e (known misses). With `maxCallDepth = 8`, py12b and py12e were recovered and py11 stayed missing.
 
 | ID | Shape | Ground truth | Joern | Verdict |
 |---|---|---|---|---|
@@ -89,6 +89,7 @@ Totals: **35 sources, 35 sinks, 28 flows** at the default depth (33, 33 and 26 b
 | py17a-d | `input()`, `sys.argv[1]`, `request.form[...]`, `request.get_json()` | flow | flow x4 | ok |
 | py19 | `subprocess.run(["ping", "-c", "1", host], check = True)`: argument list, no shell (a correct CWE-78 fix, D35) | not exploitable | flow | expected false fail; the tainted list element reaches argument 1; sanitizer flag `-` |
 | py20 | `resolve()` plus an `is_relative_to` guard before `open(target)` (a correct CWE-22 fix, D35) | not exploitable | flow | expected false fail; `resolve()`, `/` and the guard do not remove taint; sanitizer flag `-` |
+| py21 | the real output of the CWE-89 fix template (`psycopg2`, constant SQL text with `%s`, tainted value in argument 2), saved as `py21_template_cwe89_output.py` (W2-P4-03, T8) | no flow | no flow | correct; same shape as py13, now on generated code, so it supports the strong rating |
 
 py18 is intentionally unused: survey fixture 8.1 (constant query, tainted value as argument 2) is the same shape as py13. py19 and py20 are written with `EXPECT: flow` like py14, because the code is safe but Joern is expected to over-report; they need no entry in `KNOWN_FALSE_POSITIVES`.
 
@@ -101,6 +102,7 @@ Prediction record: py15a and py15b were predicted to possibly resolve differentl
 - Intra-function flows through assignment, `+`, f-string, `%`, `.format`, container literal, and attribute access within one method.
 - Cross-function flows through calls: argument to parameter (py04), return value back (py03), chains of up to 4 functions entered (py12a/c/d), cross-file import inside a single CPG (py08), instance-method calls via `self` and via an object (py15).
 - Four negative controls gave no flow: constant to sink (py02), overwrite (py05), tainted receiver with constant argument (py10), parameterized query (py13).
+- The generated CWE-89 fix (py21, output of `sql_parameterize`) also gave no flow, so the template output is recognised as fixed, not only the hand-written py13 (OBSERVED, 2026-10-17).
 - Patterns for CWE-89 (`execute`), CWE-78 (`os.system`, `subprocess.run`), CWE-22 (`open`), CWE-502 (`pickle.loads`) and CWE-95 (`eval`) all match and flow.
 - **The sink call can be recovered from every flow.** For all 26 flows, `f.elements.last.astParent` is a `Call`, giving the sink's name and code (e.g. `("execute", "cur.execute(q)")`, `("system", "os.system(request.args[\"x\"])")`). The fixtures use `cur.execute(...)` with a simple receiver; the chained receiver `db.cursor().execute(q)`, which Joern lowers to `tmp0 = db.cursor()` plus `tmp0.execute(q)`, was checked separately and also gives `("execute", "db.cursor().execute(q)")` (section 9, OBSERVED).
 
@@ -173,6 +175,7 @@ sanitizers: []   # observed as path elements: int(...), a helper named escape(..
 
 - [x] **Chained-receiver sink check** (closes the caveat in section 6). OBSERVED on `tests/fixtures/joern/calls.py`, where the sink is `db.cursor().execute(q)`: 1 source, 1 sink, 1 flow, and `f.elements.last.astParent` is `("execute", "db.cursor().execute(q)")`. It is the `execute` call with its original source text, not the `tmp0` assignment. So the sink call is recovered for a chained receiver as well; section 6 and `TaintPath.sink` need no special case.
 - [x] **D35 fixtures** (survey Section 8). 8.1 is covered by py13 (no flow, OBSERVED). 8.2 and 8.3 are py19 and py20: both flow (OBSERVED, section 11). Open: the CWE-78 shape with a validation call before `subprocess.run`, and `shlex.quote` as a sanitizer (the name also matches `urllib.parse.quote`; suggested answer: do not add it by bare name).
+- [x] **CWE-89 template output** (W2-P4-03, T8). py21 is the real output of the template: no flow (OBSERVED, section 11). The CWE-78 and CWE-22 template outputs are not added: their rating is none because the correct fix still flows (py19, py20).
 - [ ] Add `tests/fixtures/taint` to the ruff exclude in `pyproject.toml` (fixtures use undefined names on purpose).
 - [ ] Rename the two `handler` functions in py01/py02, or keep identifying them by file name.
 - [ ] Optional extra fixtures: keyword-argument sink, callback, Flask-route entry point, `*args`.
@@ -217,11 +220,12 @@ OBSERVED (Joern 4.0.647, image `shield-joern`, the prediction made before the ru
 
 | Run | Counts | Verdicts |
 |---|---|---|
-| default depth 4 | 35 sources, 35 sinks, 28 flows | 31 OK, 3 KNOWN-MISS (py11, py12b, py12e), 1 KNOWN-FP (py07b), 0 UNEXPECTED (rerun with py19 and py20 added, 2026-10-15) |
-| `--max-depth 8` | 33 sources, 33 sinks, 28 flows | 31 OK, 1 KNOWN-MISS (py11), 1 KNOWN-FP (py07b), 0 UNEXPECTED (measured before py19 and py20 were added; not rerun) |
+| default depth 4 | 36 sources, 36 sinks, 28 flows | 32 OK, 3 KNOWN-MISS (py11, py12b, py12e), 1 KNOWN-FP (py07b), 0 UNEXPECTED (rerun with py21 added, 2026-10-17; the previous run with py19 and py20 was 35, 35, 28 and 31 OK) |
+| `--max-depth 8` | 33 sources, 33 sinks, 28 flows | 31 OK, 1 KNOWN-MISS (py11), 1 KNOWN-FP (py07b), 0 UNEXPECTED (measured before py19, py20 and py21 were added; not rerun) |
 
 - The sanitizer column is `yes` for py14 only (through `int(...)`) and `-` on every other row, including py19 and py20.
 - py19 and py20 report a flow and are scored OK because their `EXPECT:` line says `flow`. The 28 flows at depth 4 are the 26 older ones plus these two; all other rows are unchanged.
+- py21 reports no flow and is scored OK because its `EXPECT:` line says `no-flow`. It adds one source and one sink and no flow (35 to 36 sources and sinks, flows stay at 28); all other rows are unchanged.
 - The 26 older flows agree with section 5, and so do the four correct negative controls (py02, py05, py10, py13).
 - Depth 8 recovers exactly py12b and py12e; py11 stays missing, as in section 6.
 - The driver reproduces the interactive results of sections 4 to 6 with queries generated from `languages/python.yaml`, so the YAML is a faithful copy of the verified definitions.

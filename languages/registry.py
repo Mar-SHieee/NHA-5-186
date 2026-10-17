@@ -44,6 +44,13 @@ _REQUIRED_KEYS = (
 #   parameter a function parameter holds the tainted value    main(int argc, char **argv)
 _SOURCE_KINDS = ("call", "argument", "parameter")
 
+# Optional key (W2-P4-03). The registry does not import shield_core.verify (that would be a cycle:
+# interface -> registry, evidence -> interface), so a rating is stored as the plain string and the
+# caller converts it with Rating(spec.rating).
+_OPTIONAL_KEYS = ("fix_templates",)
+_FIX_RATINGS = ("strong", "weak", "none")
+_FIX_NAME_RE = re.compile(r"^[a-z_][a-z0-9_]*$")
+
 
 # --------------------------------------------------------------------------- errors
 
@@ -118,6 +125,21 @@ class SinkSpec:
 
 
 @dataclass(frozen=True)
+class FixTemplateSpec:
+    """Metadata of one fix template (W2-P4-03). The code lives in shield_core, found by name.
+
+    rating         re-detection rating of the class (D35): strong | weak | none
+    template       name of the rewrite function in shield_core.models.fixgen.TEMPLATES
+    pattern_check  name of the syntactic check in shield_core.verify.pattern_checks.PATTERN_CHECKS
+    """
+
+    cwe: str
+    rating: str
+    template: str
+    pattern_check: str
+
+
+@dataclass(frozen=True)
 class LanguageSpec:
     name: str
     enabled: bool
@@ -131,6 +153,16 @@ class LanguageSpec:
     # call a path element is an argument of (Joern lists the arguments of an output-parameter
     # sanitizer, not the call itself; see docs/taint_spike.md, c22a/c22b).
     sanitizers: tuple[str, ...]
+    # A default must come last. Languages without templates (cpp and java before Week 3) leave it
+    # out of the YAML file.
+    fix_templates: tuple[FixTemplateSpec, ...] = ()
+
+    def fix_template(self, cwe: str) -> FixTemplateSpec | None:
+        """The template entry for a CWE, or None when the language has none."""
+        for entry in self.fix_templates:
+            if entry.cwe == cwe:
+                return entry
+        return None
 
 
 # --------------------------------------------------------------------------- parsing
@@ -291,6 +323,48 @@ def _parse_sanitizers(path: Path, data: dict[str, Any]) -> tuple[str, ...]:
     return names
 
 
+def _fix_name(path: Path, where: str, key: str, value: Any) -> str:
+    if not isinstance(value, str) or not _FIX_NAME_RE.match(value):
+        raise _fail(path, f"{where} '{key}' must be a lowercase identifier like 'sql_parameterize'")
+    return value
+
+
+def _parse_fix_templates(
+    path: Path, data: dict[str, Any], cwes: tuple[str, ...]
+) -> tuple[FixTemplateSpec, ...]:
+    if "fix_templates" not in data:
+        return ()
+    entries = _entries(path, data, "fix_templates")
+    result: list[FixTemplateSpec] = []
+    seen: set[str] = set()
+    for i, raw in enumerate(entries):
+        where = f"'fix_templates[{i}]'"
+        item = _entry_mapping(path, where, raw, {"cwe", "rating", "template", "pattern_check"})
+        missing = [k for k in ("cwe", "rating", "template", "pattern_check") if k not in item]
+        if missing:
+            raise _fail(path, f"{where} is missing: {', '.join(missing)}")
+        cwe = item["cwe"]
+        if not isinstance(cwe, str) or not _CWE_RE.match(cwe):
+            raise _fail(path, f"{where} has an invalid 'cwe' {cwe!r} (expected like 'CWE-89')")
+        if cwe not in cwes:
+            raise _fail(path, f"{where} uses {cwe!r}, which is not in 'cwes'")
+        if cwe in seen:
+            raise _fail(path, f"{where} repeats {cwe!r}: one template per CWE")
+        seen.add(cwe)
+        rating = item["rating"]
+        if rating not in _FIX_RATINGS:
+            raise _fail(path, f"{where} 'rating' must be one of: {', '.join(_FIX_RATINGS)}")
+        result.append(
+            FixTemplateSpec(
+                cwe=cwe,
+                rating=rating,
+                template=_fix_name(path, where, "template", item["template"]),
+                pattern_check=_fix_name(path, where, "pattern_check", item["pattern_check"]),
+            )
+        )
+    return tuple(result)
+
+
 def _parse_spec(path: Path, data: Any) -> LanguageSpec:
     if not isinstance(data, dict):
         raise _fail(path, "the file must contain a mapping of keys to values")
@@ -298,7 +372,7 @@ def _parse_spec(path: Path, data: Any) -> LanguageSpec:
     missing = [key for key in _REQUIRED_KEYS if key not in data]
     if missing:
         raise _fail(path, f"missing keys: {', '.join(missing)}")
-    unknown = sorted(str(key) for key in set(data) - set(_REQUIRED_KEYS))
+    unknown = sorted(str(key) for key in set(data) - set(_REQUIRED_KEYS) - set(_OPTIONAL_KEYS))
     if unknown:
         raise _fail(path, f"unknown keys: {', '.join(unknown)}")
 
@@ -321,16 +395,18 @@ def _parse_spec(path: Path, data: Any) -> LanguageSpec:
     if not isinstance(joern_frontend, str) or not joern_frontend.strip():
         raise _fail(path, "'joern_frontend' must be a non-empty string")
 
+    cwes = _string_list(path, data, "cwes", _CWE_RE)
     return LanguageSpec(
         name=name,
         enabled=enabled,
         extensions=extensions,
         joern_frontend=joern_frontend,
         tree_sitter=_parse_tree_sitter(path, data["tree_sitter"], extensions),
-        cwes=_string_list(path, data, "cwes", _CWE_RE),
+        cwes=cwes,
         sources=_parse_sources(path, data),
         sinks=_parse_sinks(path, data),
         sanitizers=_parse_sanitizers(path, data),
+        fix_templates=_parse_fix_templates(path, data, cwes),
     )
 
 
