@@ -26,7 +26,7 @@ import pyarrow as pa
 import pyarrow.csv as pacsv
 import pyarrow.parquet as pq
 
-from shield_core.datasets.schema import conform, validate
+from shield_core.datasets.schema import arrow_schema, conform, validate
 
 # ---------------------------------------------------------------------
 # Paths and settings
@@ -53,7 +53,7 @@ COMPRESSION = "zstd"
 COLUMN_ALIASES = {
     "func_before": "func_before",
     "func_after": "func_after",
-    "target": "vul",
+    "target": "target",
     "cwe": "CWE ID",
     "project": "project",
     "commit": "commit_id",
@@ -264,19 +264,21 @@ def download_raw() -> None:
         # Verify the temporary Parquet file before publishing it.
         parquet_file = pq.ParquetFile(tmp_path)
 
-        actual_columns = parquet_file.schema_arrow.names
+        try:
+            actual_columns = parquet_file.schema_arrow.names
+            actual_rows = parquet_file.metadata.num_rows
 
-        if actual_columns != columns:
-            raise RuntimeError("Output Parquet columns do not match the source CSV columns.")
+            if actual_columns != columns:
+                raise RuntimeError("Output Parquet columns do not match the source CSV columns.")
 
-        actual_rows = parquet_file.metadata.num_rows
+            if actual_rows != total_rows:
+                raise RuntimeError(
+                    f"Row count mismatch: wrote {total_rows:,}, Parquet contains {actual_rows:,}."
+                )
+        finally:
+            parquet_file.close()
 
-        if actual_rows != total_rows:
-            raise RuntimeError(
-                f"Row count mismatch: wrote {total_rows:,}, Parquet contains {actual_rows:,}."
-            )
-
-        # Replace the old output only after successful completion.
+        # Replace the old output only after successful verification.
         tmp_path.replace(FULL_PATH)
 
     except Exception:
@@ -302,8 +304,21 @@ def map_to_unified(raw: pd.DataFrame) -> pd.DataFrame:
 
     aliases = COLUMN_ALIASES
 
+    # Support both the original dataset column and legacy/test data.
+    target_column = next(
+        (column for column in (aliases["target"], "vul") if column in raw.columns),
+        None,
+    )
+
+    if target_column is None:
+        raise ValueError(
+            "Big-Vul target column not found. "
+            f"Expected one of [{aliases['target']!r}, 'vul']; "
+            f"available columns: {list(raw.columns)}"
+        )
+
     target = pd.to_numeric(
-        raw[aliases["target"]],
+        raw[target_column],
         errors="coerce",
     ).fillna(0)
 
@@ -329,9 +344,11 @@ def map_to_unified(raw: pd.DataFrame) -> pd.DataFrame:
 
     out["cwe"] = raw[aliases["cwe"]]
 
-    out["project"] = raw[aliases["project"]].fillna("unknown")
+    # Keep missing project/commit as <NA> (schema contract); "unknown" would merge
+    # unrelated rows into one fake project and break group-based splits.
+    out["project"] = raw[aliases["project"]]
 
-    out["commit"] = raw[aliases["commit"]].fillna("unknown")
+    out["commit"] = raw[aliases["commit"]]
 
     date_column = aliases["date"]
 
@@ -401,8 +418,10 @@ def build_unified() -> None:
                     "Unified Big-Vul failed validation:\n  - " + "\n  - ".join(map(str, problems))
                 )
 
+            # Explicit schema keeps cwe/cve as list<string> in every batch.
             table = pa.Table.from_pandas(
                 unified,
+                schema=arrow_schema(),
                 preserve_index=False,
             )
 
@@ -425,9 +444,10 @@ def build_unified() -> None:
             for label in (0, 1):
                 label_counts[label] += int(counts.get(label, 0))
 
-            null_cwe += int(unified["cwe"].isna().sum())
+            # cwe/cve are lists, so "missing" means an empty list (isna() is always False).
+            null_cwe += int(unified["cwe"].map(len).eq(0).sum())
             null_date += int(unified["date"].isna().sum())
-            null_cve += int(unified["cve"].isna().sum())
+            null_cve += int(unified["cve"].map(len).eq(0).sum())
 
             print(
                 f"\rUnified rows written: {total_rows:,}",

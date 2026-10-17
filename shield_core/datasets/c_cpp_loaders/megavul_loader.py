@@ -11,7 +11,7 @@ import pandas as pd
 import pyarrow as pa
 import pyarrow.parquet as pq
 
-from shield_core.datasets.schema import conform, validate
+from shield_core.datasets.schema import arrow_schema, conform, validate
 
 
 def batched(iterable, n):
@@ -115,7 +115,7 @@ def _to_row(rec: dict) -> dict | None:
         "cwe": cwe_ids if cwe_ids else None,
         "project": rec.get("repo_name"),
         "commit": rec.get("commit_hash"),
-        "date": rec.get("date"),
+        "date": rec.get("publish_date"),  # MegaVul has no `date` field
         "cve": rec.get("cve_id"),
         "fixed_code": rec.get("func") if is_vul else None,
     }
@@ -198,7 +198,8 @@ def megavul_to_parquet(
     projects: set[str] = set()
 
     writer = None
-    schema = None
+    # Fixed schema: inferring it from chunk 0 gives list<null> when that chunk has no CWE/CVE.
+    schema = arrow_schema()
 
     try:
         rows = _stream_rows(path, limit, stats)
@@ -217,7 +218,6 @@ def megavul_to_parquet(
             )
 
             if writer is None:
-                schema = table.schema
                 writer = pq.ParquetWriter(
                     tmp_path,
                     schema,
