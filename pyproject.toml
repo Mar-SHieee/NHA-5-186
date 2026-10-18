@@ -19,6 +19,7 @@ dependencies = [
     "ijson",
     "pyyaml",
     "kagglehub",
+    "xgboost"
 ]
 
 
@@ -35,6 +36,7 @@ include = ["shield_core*", "eval*" ,"languages*"]
 
 [tool.setuptools.package-data]
 languages = ["*.yaml"]
+"shield_core.models" = ["*.yaml"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Literal, Optional
 
 from languages import registry
+from shield_core.models import registry as model_registry
 
 INTERFACE_VERSION = "1.0"  # covers the signatures and exceptions
 SCHEMA_VERSION = "1.0"  # covers the payload fields
@@ -113,7 +114,13 @@ class FixResult(_Serializable):
 
 def predict(code: str, language: str) -> Result:
     _check_language(language)
-    return Result(vulnerable=False, cwe=None, confidence=0.0)
+    try:
+        model = model_registry.get_model(language)
+    except model_registry.ModelRegistryError as e:
+        raise ModelUnavailableError(str(e)) from e
+    result = model.predict(code, language)
+    result.model_version = model.version  # always name the model that really answered
+    return result
 
 
 def scan_repo(path: str) -> RepoResult:
