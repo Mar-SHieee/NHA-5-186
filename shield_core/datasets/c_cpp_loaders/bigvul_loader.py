@@ -586,7 +586,13 @@ def save_commit_cve_mapping() -> None:
         raise
 
     print(f"Commit-CVE mapping rows: {len(mapping):,}")
-    print(f"Commit-CVE mapping:     {MAPPING_PATH.relative_to(REPO_ROOT)}")
+
+
+mapping_display_path = MAPPING_PATH
+if MAPPING_PATH.is_relative_to(REPO_ROOT):
+    mapping_display_path = MAPPING_PATH.relative_to(REPO_ROOT)
+
+print(f"Commit-CVE mapping:     {mapping_display_path}")
 
 
 # ---------------------------------------------------------------------
