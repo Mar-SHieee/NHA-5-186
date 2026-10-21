@@ -57,20 +57,24 @@ class CVEfixesExtractor:
         # Read 1000 rows per chunk
         return pd.read_sql_query(query, conn, chunksize=1000)
 
-    def _save_chunks_to_csv(self, chunks_generator, table_name: str) -> None:
-        """Single Responsibility: Receive data chunks and incrementally save them to a CSV file."""
+    def _save_chunks_to_csv(self, chunks_generator, table_name: str) -> int:
+        """Save chunks to CSV and return the total number of extracted rows."""
         self.output_dir.mkdir(parents=True, exist_ok=True)
         csv_path = self.output_dir / f"{table_name}.csv"
         csv_path.unlink(missing_ok=True)
 
         print(f"Saving '{table_name}' to: {csv_path}")
+
         first_chunk = True
+        total_rows = 0
+
         for chunk in chunks_generator:
-            # mode='a' appends data; header is written only for the first chunk
             chunk.to_csv(csv_path, mode="a", index=False, header=first_chunk)
+            total_rows += len(chunk)
             first_chunk = False
 
-        print(f"Successfully extracted and saved {table_name}.csv\n")
+        print(f"Successfully extracted {total_rows:,} rows from '{table_name}'.\n")
+        return total_rows
 
     def extract_all_tables(self, table_list: list[str]) -> None:
         """Orchestrator: Manage the sequential extraction process for all specified tables."""

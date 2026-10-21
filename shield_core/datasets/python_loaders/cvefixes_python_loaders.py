@@ -11,7 +11,7 @@ so some "vulnerable" functions are only touched by the commit, not the bug itsel
 
 Pairing the old and the patched function is done on ``file_change_id`` +
 ``signature``. Functions with no match keep ``fixed_code = NA`` and produce no
-safe sample1.
+safe sample.
 """
 
 from __future__ import annotations
@@ -22,7 +22,8 @@ from pathlib import Path
 
 import pandas as pd
 
-from shield_core.datasets.schema import conform, validate
+from shield_core.datasets.project_names import project_from_repo_url
+from shield_core.datasets.schema import conform, to_parquet, validate
 
 log = logging.getLogger(__name__)
 
@@ -38,6 +39,7 @@ class CVEfixesPythonLoader:
 
     SOURCE = "cvefixes_python"  # value of the `source` column and the parquet name
     LANGUAGE = "python"
+    MAPPING_NAME = "cvefixes_python_commit_cve_mapping.parquet"
 
     # Only the columns we need: file_change and method_change hold huge code columns.
     TABLE_COLUMNS = {
@@ -94,14 +96,6 @@ class CVEfixesPythonLoader:
         unique = sorted(set(ids), key=lambda cwe: int(cwe.split("-")[1]))
         return CWE_SEPARATOR.join(unique)
 
-    @staticmethod
-    def _project_name(url) -> str | None:
-        """Repo URL -> project name (last path segment, no '.git')."""
-        if pd.isna(url):
-            return None
-        name = str(url).strip().rstrip("/").rsplit("/", 1)[-1].removesuffix(".git")
-        return name or None
-
     # ---------- merging the tables ----------
 
     def _pair_old_with_new(self, method_change: pd.DataFrame) -> pd.DataFrame:
@@ -127,6 +121,50 @@ class CVEfixesPythonLoader:
         joined = fixes[["cve_id", "hash"]].merge(valid, on="cve_id", how="inner")
         return joined.groupby("hash")["cwe_id"].agg(self._join_cwe).rename("cwe").reset_index()
 
+    def _aggregate_cve_per_commit(self, fixes: pd.DataFrame) -> pd.DataFrame:
+        """Collect every CVE associated with each commit as a list.
+
+        These are commit-level associations, not proof that every CVE affects
+        every function changed by that commit. The full mapping is also saved
+        separately for split grouping.
+        """
+        valid = fixes.dropna(subset=["hash", "cve_id"]).copy()
+        valid["cve_id"] = valid["cve_id"].astype("string").str.strip().str.upper()
+        valid = valid[valid["cve_id"].str.fullmatch(r"CVE-\d{4}-\d{4,}").fillna(False)]
+        return (
+            valid.groupby("hash")["cve_id"]
+            .agg(
+                lambda ids: sorted(
+                    set(ids), key=lambda c: (int(c.split("-")[1]), int(c.split("-")[2]))
+                )
+            )
+            .rename("cve")
+            .reset_index()
+        )
+
+    def _save_commit_cve_mapping(self, fixes: pd.DataFrame) -> Path:
+        """Preserve every known commit-CVE association without duplicating code rows."""
+        mapping = (
+            fixes[["hash", "cve_id"]]
+            .dropna(subset=["hash", "cve_id"])
+            .rename(columns={"hash": "commit", "cve_id": "cve"})
+        )
+        mapping["commit"] = mapping["commit"].astype("string").str.strip()
+        mapping["cve"] = mapping["cve"].astype("string").str.strip().str.upper()
+        mapping = (
+            mapping[
+                mapping["commit"].ne("")
+                & mapping["cve"].str.fullmatch(r"CVE-\d{4}-\d{4,}").fillna(False)
+            ]
+            .drop_duplicates()
+            .reset_index(drop=True)
+        )
+        self.interim_dir.mkdir(parents=True, exist_ok=True)
+        path = self.interim_dir / self.MAPPING_NAME
+        mapping.to_parquet(path, index=False)
+        log.info("saved %s (%d commit-CVE links)", path, len(mapping))
+        return path
+
     def _prepare_commits(self, commits: pd.DataFrame) -> pd.DataFrame:
         """One row per hash (the same commit can appear under forked repos)."""
         return commits.drop_duplicates(subset="hash")[["hash", "repo_url", "author_date"]]
@@ -136,12 +174,14 @@ class CVEfixesPythonLoader:
         pairs = self._pair_old_with_new(tables["method_change"])
         commits = self._prepare_commits(tables["commits"])
         cwe = self._aggregate_cwe_per_commit(tables["fixes"], tables["cwe_classification"])
+        cve = self._aggregate_cve_per_commit(tables["fixes"])
         return (
             pairs.merge(
                 tables["file_change"], on="file_change_id", how="inner", validate="many_to_one"
             )
             .merge(commits, on="hash", how="left", validate="many_to_one")
             .merge(cwe, on="hash", how="left", validate="many_to_one")
+            .merge(cve, on="hash", how="left", validate="many_to_one")
         )
 
     # ---------- cleaning ----------
@@ -158,9 +198,9 @@ class CVEfixesPythonLoader:
         return df.rename(columns=self.COLUMN_MAP)
 
     def _clean_project_names(self, df: pd.DataFrame) -> pd.DataFrame:
-        """Repo URL -> project name."""
+        """Repo URL -> `owner/repo` (same convention as every other SHIELD dataset)."""
         out = df.copy()
-        out["project"] = out["project"].map(self._project_name)
+        out["project"] = out["project"].map(project_from_repo_url)
         return out
 
     def _filter_python_only(self, df: pd.DataFrame) -> pd.DataFrame:
@@ -194,7 +234,10 @@ class CVEfixesPythonLoader:
         safe = df[self._has_text(df["fixed_code"])].copy()
         safe["code"] = safe["fixed_code"]
         safe["fixed_code"] = pd.NA
+        # A patched function is a safe sample: do not attach vulnerability labels.
+        # Commit-level CVE links remain preserved in cvefixes_python_commit_cve_mapping.parquet.
         safe["cwe"] = pd.NA
+        safe["cve"] = pd.NA
         safe["label"] = 0
         return safe.reset_index(drop=True)
 
@@ -232,13 +275,19 @@ class CVEfixesPythonLoader:
             df["commit"].notna().sum(),
             df["fixed_code"].notna().sum(),
         )
+        log.info(
+            "%s: date=%d rows_with_cve=%d",
+            name,
+            int(df["date"].notna().sum()),
+            int(df["cve"].map(len).gt(0).sum()),
+        )
         log.info("%s: validation passed", name)
 
     def _save_to_parquet(self, df: pd.DataFrame) -> Path:
         """Write the final table to the interim folder."""
         self.interim_dir.mkdir(parents=True, exist_ok=True)
         path = self.interim_dir / f"{self.SOURCE}.parquet"
-        df.to_parquet(path, index=False)
+        to_parquet(df, path)
         log.info("saved %s", path)
         return path
 
@@ -247,6 +296,7 @@ class CVEfixesPythonLoader:
     def execute_pipeline(self) -> Path:
         """Run every step in order and return the parquet path."""
         tables = self._load_tables()
+        self._save_commit_cve_mapping(tables["fixes"])
         df = self._merge_tables(tables)
         df = self._blank_identical_fixes(df)
         df = self._rename_columns(df)

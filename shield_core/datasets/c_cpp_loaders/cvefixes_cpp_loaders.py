@@ -1,20 +1,13 @@
 """CVEfixes (C/C++) loader: CVEfixes CSV tables -> unified schema, function level.
 
-One row = one function (``method_change``). For every old function
-(``before_change == True``) we build two samples:
+One row = one function (method_change). For every old function
+(before_change == True) we build two samples:
+* old function -> label 1, fixed_code = its patched version if found
+* patched function -> label 0, with empty cve, cwe, and fixed_code
 
-* the old function      -> label 1, ``fixed_code`` = its patched version (if found)
-* the patched function  -> label 0 (``fixed_code`` and ``cwe`` are empty)
-
-C and C++ are loaded together (CVEfixes labels them 'C' and 'C++'); the
-``language`` column keeps them apart as 'c' and 'cpp'.
-
-Known limitation: CVEfixes stores every function that changed in a fix commit,
-so some "vulnerable" functions are only touched by the commit, not the bug itself.
-
-Pairing the old and the patched function is done on ``file_change_id`` +
-``signature``. Functions with no match keep ``fixed_code = NA`` and produce no
-safe sample.
+CVE/CWE annotations joined to functions are commit-level associations; they do
+not prove that every associated CVE/CWE affects every changed function.
+The complete commit-CVE relation is preserved in a separate mapping parquet.
 """
 
 from __future__ import annotations
@@ -25,7 +18,8 @@ from pathlib import Path
 
 import pandas as pd
 
-from shield_core.datasets.schema import conform, validate
+from shield_core.datasets.project_names import project_from_repo_url
+from shield_core.datasets.schema import conform, to_parquet, validate
 
 log = logging.getLogger(__name__)
 
@@ -33,18 +27,17 @@ log = logging.getLogger(__name__)
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 
 CWE_SEPARATOR = ", "
-_CWE_OK = re.compile(r"^CWE-\d+$")  # drops NVD-CWE-Other / NVD-CWE-noinfo
+_CWE_OK = re.compile(r"^CWE-\d+$")
+_CVE_OK = re.compile(r"^CVE-\d{4}-\d{4,}$")
 
 
 class CVEfixesCppLoader:
     """Turns the extracted CVEfixes CSV tables into the unified schema."""
 
-    SOURCE = "cvefixes_cpp"  # value of the `source` column and the parquet name
-
-    # CVEfixes language name (lowercase) -> schema language name
+    SOURCE = "cvefixes_cpp"
+    MAPPING_NAME = "cvefixes_cpp_commit_cve_mapping.parquet"
     LANGUAGE_MAP = {"c": "c", "c++": "cpp"}
 
-    # Only the columns we need: file_change and method_change hold huge code columns.
     TABLE_COLUMNS = {
         "method_change": ["file_change_id", "signature", "code", "before_change"],
         "file_change": ["file_change_id", "hash", "programming_language"],
@@ -99,12 +92,10 @@ class CVEfixesCppLoader:
         return CWE_SEPARATOR.join(unique)
 
     @staticmethod
-    def _project_name(url) -> str | None:
-        """Repo URL -> project name (last path segment, no '.git')."""
-        if pd.isna(url):
-            return None
-        name = str(url).strip().rstrip("/").rsplit("/", 1)[-1].removesuffix(".git")
-        return name or None
+    def _cve_sort_key(cve: str) -> tuple[int, int]:
+        """Sort CVE IDs by year and numeric suffix."""
+        _, year, number = cve.split("-")
+        return int(year), int(number)
 
     # ---------- merging the tables ----------
 
@@ -127,33 +118,81 @@ class CVEfixesCppLoader:
         self, fixes: pd.DataFrame, cwe_classification: pd.DataFrame
     ) -> pd.DataFrame:
         """One row per commit hash with all its valid CWE ids in one string."""
-        valid = cwe_classification[cwe_classification["cwe_id"].astype(str).str.match(_CWE_OK)]
-        joined = fixes[["cve_id", "hash"]].merge(valid, on="cve_id", how="inner")
+        valid = cwe_classification[
+            cwe_classification["cwe_id"].astype(str).str.fullmatch(_CWE_OK)
+        ].drop_duplicates(["cve_id", "cwe_id"])
+        joined = fixes[["cve_id", "hash"]].dropna().merge(valid, on="cve_id", how="inner")
+        if joined.empty:
+            return pd.DataFrame(columns=["hash", "cwe"])
         return joined.groupby("hash")["cwe_id"].agg(self._join_cwe).rename("cwe").reset_index()
+
+    def _aggregate_cve_per_commit(self, fixes: pd.DataFrame) -> pd.DataFrame:
+        """Collect every valid CVE associated with each commit as a sorted list.
+
+        These are commit-level associations, not proof that every CVE affects
+        every function changed by that commit. The full mapping is saved separately.
+        """
+        valid = fixes.dropna(subset=["hash", "cve_id"]).copy()
+        valid["cve_id"] = valid["cve_id"].astype("string").str.strip().str.upper()
+        valid = valid[valid["cve_id"].str.fullmatch(_CVE_OK).fillna(False)]
+        if valid.empty:
+            return pd.DataFrame(columns=["hash", "cve"])
+        return (
+            valid.groupby("hash")["cve_id"]
+            .agg(lambda ids: sorted(set(ids), key=self._cve_sort_key))
+            .rename("cve")
+            .reset_index()
+        )
+
+    def _save_commit_cve_mapping(self, fixes: pd.DataFrame) -> Path:
+        """Preserve every distinct commit-CVE association without duplicating code rows."""
+        mapping = (
+            fixes[["hash", "cve_id"]]
+            .dropna(subset=["hash", "cve_id"])
+            .rename(columns={"hash": "commit", "cve_id": "cve"})
+        )
+        mapping["commit"] = mapping["commit"].astype("string").str.strip()
+        mapping["cve"] = mapping["cve"].astype("string").str.strip().str.upper()
+        mapping = (
+            mapping[mapping["commit"].ne("") & mapping["cve"].str.fullmatch(_CVE_OK).fillna(False)]
+            .drop_duplicates()
+            .reset_index(drop=True)
+        )
+
+        self.interim_dir.mkdir(parents=True, exist_ok=True)
+        path = self.interim_dir / self.MAPPING_NAME
+        mapping.to_parquet(path, index=False)
+        log.info("saved %s (%d commit-CVE links)", path, len(mapping))
+        return path
 
     def _prepare_commits(self, commits: pd.DataFrame) -> pd.DataFrame:
         """One row per hash (the same commit can appear under forked repos)."""
         return commits.drop_duplicates(subset="hash")[["hash", "repo_url", "author_date"]]
 
     def _merge_tables(self, tables: dict[str, pd.DataFrame]) -> pd.DataFrame:
-        """Join functions with their file, commit and CWE info into one table."""
+        """Join function pairs with commit metadata, CVEs, and CWEs."""
         pairs = self._pair_old_with_new(tables["method_change"])
         commits = self._prepare_commits(tables["commits"])
         cwe = self._aggregate_cwe_per_commit(tables["fixes"], tables["cwe_classification"])
+        cve = self._aggregate_cve_per_commit(tables["fixes"])
         return (
             pairs.merge(
-                tables["file_change"], on="file_change_id", how="inner", validate="many_to_one"
+                tables["file_change"],
+                on="file_change_id",
+                how="inner",
+                validate="many_to_one",
             )
             .merge(commits, on="hash", how="left", validate="many_to_one")
             .merge(cwe, on="hash", how="left", validate="many_to_one")
+            .merge(cve, on="hash", how="left", validate="many_to_one")
         )
 
     # ---------- cleaning ----------
 
     def _blank_identical_fixes(self, df: pd.DataFrame) -> pd.DataFrame:
-        """Patched code equal to the old code is not a fix: set fixed_code to NA."""
+        """Patched code equal to old code is not a fix: set fixed_code to NA."""
         out = df.copy()
-        same = out["code"] == out["fixed_code"]
+        same = out["code"].eq(out["fixed_code"]).fillna(False)
         out.loc[same, "fixed_code"] = pd.NA
         return out
 
@@ -162,18 +201,18 @@ class CVEfixesCppLoader:
         return df.rename(columns=self.COLUMN_MAP)
 
     def _clean_project_names(self, df: pd.DataFrame) -> pd.DataFrame:
-        """Repo URL -> project name."""
+        """Repo URL -> project name in the shared `owner/repo` convention."""
         out = df.copy()
-        out["project"] = out["project"].map(self._project_name)
+        out["project"] = out["project"].map(project_from_repo_url)
         return out
 
     def _filter_c_cpp_only(self, df: pd.DataFrame) -> pd.DataFrame:
         """Keep C and C++ rows only."""
-        is_c_cpp = df["language"].astype(str).str.strip().str.lower().isin(self.LANGUAGE_MAP)
-        return df[is_c_cpp].reset_index(drop=True)
+        languages = df["language"].astype(str).str.strip().str.lower()
+        return df[languages.isin(self.LANGUAGE_MAP)].reset_index(drop=True)
 
     def _normalize_language(self, df: pd.DataFrame) -> pd.DataFrame:
-        """Write the language the way the schema expects it ('c' or 'cpp')."""
+        """Normalize schema language values to 'c' or 'cpp'."""
         out = df.copy()
         out["language"] = out["language"].astype(str).str.strip().str.lower().map(self.LANGUAGE_MAP)
         return out
@@ -194,64 +233,72 @@ class CVEfixesCppLoader:
         return out
 
     def _create_safe_samples(self, df: pd.DataFrame) -> pd.DataFrame:
-        """Patched functions become the code, with label 0 and no CWE."""
+        """Patched functions become safe samples with no CVE/CWE annotation."""
         safe = df[self._has_text(df["fixed_code"])].copy()
         safe["code"] = safe["fixed_code"]
         safe["fixed_code"] = pd.NA
+        # Preserve commit-level links in the separate mapping file, not on safe samples.
         safe["cwe"] = pd.NA
+        safe["cve"] = pd.NA
         safe["label"] = 0
         return safe.reset_index(drop=True)
 
     def _concat_samples(self, vulnerable: pd.DataFrame, safe: pd.DataFrame) -> pd.DataFrame:
-        """Stack the vulnerable and the safe samples."""
+        """Stack vulnerable and safe samples."""
         return pd.concat([vulnerable, safe], ignore_index=True)
 
     # ---------- schema, logs, saving ----------
 
     def _apply_schema(self, df: pd.DataFrame) -> pd.DataFrame:
-        """Force the table into the unified schema."""
         return conform(df, self.SOURCE)
 
     def _validate_schema(self, df: pd.DataFrame) -> None:
-        """Raise if the table breaks a schema rule."""
         problems = validate(df)
         if problems:
             raise ValueError(f"{self.SOURCE} failed validation: {problems}")
 
     def _print_logs(self, df: pd.DataFrame) -> None:
-        """Row counts that feed the acceptance audit."""
-        name = self.SOURCE
-        log.info("%s: %d rows", name, len(df))
+        log.info("%s: %d rows", self.SOURCE, len(df))
         log.info(
             "%s: %d vulnerable, %d not vulnerable",
-            name,
+            self.SOURCE,
             int((df["label"] == 1).sum()),
             int((df["label"] == 0).sum()),
         )
-        log.info("%s: rows per language: %s", name, df["language"].value_counts().to_dict())
+        log.info(
+            "%s: rows per language: %s",
+            self.SOURCE,
+            df["language"].value_counts().to_dict(),
+        )
         log.info(
             "%s: non-null cwe=%d project=%d commit=%d fixed_code=%d",
-            name,
-            df["cwe"].notna().sum(),
-            df["project"].notna().sum(),
-            df["commit"].notna().sum(),
-            df["fixed_code"].notna().sum(),
+            self.SOURCE,
+            int(df["cwe"].notna().sum()),
+            int(df["project"].notna().sum()),
+            int(df["commit"].notna().sum()),
+            int(df["fixed_code"].notna().sum()),
         )
-        log.info("%s: validation passed", name)
+        log.info(
+            "%s: date=%d rows_with_cve=%d",
+            self.SOURCE,
+            int(df["date"].notna().sum()),
+            int(df["cve"].map(len).gt(0).sum()),
+        )
+        log.info("%s: validation passed", self.SOURCE)
 
     def _save_to_parquet(self, df: pd.DataFrame) -> Path:
-        """Write the final table to the interim folder."""
+        """Write final data with the stable schema Arrow types."""
         self.interim_dir.mkdir(parents=True, exist_ok=True)
         path = self.interim_dir / f"{self.SOURCE}.parquet"
-        df.to_parquet(path, index=False)
+        to_parquet(df, path)
         log.info("saved %s", path)
         return path
 
-    # ---------- the only method called from outside ----------
-
     def execute_pipeline(self) -> Path:
-        """Run every step in order and return the parquet path."""
+        """Run all pipeline stages and return the final parquet path."""
         tables = self._load_tables()
+        self._save_commit_cve_mapping(tables["fixes"])
+
         df = self._merge_tables(tables)
         df = self._blank_identical_fixes(df)
         df = self._rename_columns(df)

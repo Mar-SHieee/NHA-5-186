@@ -18,7 +18,9 @@ python -m shield_core.datasets.c_cpp_loaders.bigvul_loader
 """
 
 import os
+import re
 import sys
+from collections import Counter
 from pathlib import Path
 
 import pandas as pd
@@ -26,6 +28,7 @@ import pyarrow as pa
 import pyarrow.csv as pacsv
 import pyarrow.parquet as pq
 
+from shield_core.datasets.project_names import project_from_repo_url
 from shield_core.datasets.schema import arrow_schema, conform, validate
 
 # ---------------------------------------------------------------------
@@ -39,6 +42,7 @@ INTERIM_DIR = REPO_ROOT / "data" / "interim"
 
 FULL_PATH = RAW_DIR / "bigvul_full.parquet"
 UNIFIED_PATH = INTERIM_DIR / "bigvul.parquet"
+MAPPING_PATH = INTERIM_DIR / "bigvul_commit_cve_mapping.parquet"
 
 KAGGLE_DATASET = "zalinarusinova/bigvul"
 SPLITS = ("train", "val", "test")
@@ -56,6 +60,7 @@ COLUMN_ALIASES = {
     "target": "target",
     "cwe": "CWE ID",
     "project": "project",
+    "repo_link": "codeLink",  # commit URL; project_from_repo_url turns it into owner/repo
     "commit": "commit_id",
     "date": "Publish Date",
     "lang": "lang",
@@ -299,6 +304,21 @@ def download_raw() -> None:
 # ---------------------------------------------------------------------
 
 
+def resolve_project(raw: pd.DataFrame) -> tuple[pd.Series, pd.Series]:
+    """Project names in the shared `owner/repo` convention (see project_names.py).
+
+    `owner/repo` comes from the GitHub commit link through `project_from_repo_url`. When a
+    row has no usable GitHub link (missing, or e.g. git.kernel.org), the row's own raw
+    `project` value is kept unchanged. Returns (names, from_link).
+    """
+    from_link = raw[COLUMN_ALIASES["repo_link"]].map(
+        lambda url: project_from_repo_url(url, github_only=True)
+    )
+    has_link = from_link.notna()
+    names = from_link.where(has_link, raw[COLUMN_ALIASES["project"]])
+    return names, has_link
+
+
 def map_to_unified(raw: pd.DataFrame) -> pd.DataFrame:
     """Map the selected raw columns into the unified schema."""
 
@@ -346,7 +366,7 @@ def map_to_unified(raw: pd.DataFrame) -> pd.DataFrame:
 
     # Keep missing project/commit as <NA> (schema contract); "unknown" would merge
     # unrelated rows into one fake project and break group-based splits.
-    out["project"] = raw[aliases["project"]]
+    out["project"], _ = resolve_project(raw)
 
     out["commit"] = raw[aliases["commit"]]
 
@@ -392,6 +412,7 @@ def build_unified() -> None:
         raise ValueError(f"Required columns are missing from raw Parquet: {missing}")
 
     raw_file = pq.ParquetFile(FULL_PATH)
+    project_column = COLUMN_ALIASES["project"]
 
     writer = None
     total_rows = 0
@@ -399,6 +420,8 @@ def build_unified() -> None:
     null_cwe = 0
     null_date = 0
     null_cve = 0
+    project_from_link = 0
+    kept_raw_names: Counter = Counter()
 
     try:
         for batch in raw_file.iter_batches(
@@ -449,6 +472,10 @@ def build_unified() -> None:
             null_date += int(unified["date"].isna().sum())
             null_cve += int(unified["cve"].map(len).eq(0).sum())
 
+            _, has_link = resolve_project(raw)
+            project_from_link += int(has_link.sum())
+            kept_raw_names.update(raw.loc[~has_link, project_column].dropna().tolist())
+
             print(
                 f"\rUnified rows written: {total_rows:,}",
                 end="",
@@ -478,9 +505,88 @@ def build_unified() -> None:
     print(f"Null CWE rows:  {null_cwe:,}")
     print(f"Null date rows: {null_date:,}")
     print(f"Null CVE rows:  {null_cve:,}")
+    print(
+        f"Project from GitHub link: {project_from_link:,} rows "
+        f"({100 * project_from_link / max(total_rows, 1):.1f}%); "
+        f"raw project kept: {total_rows - project_from_link:,} rows"
+    )
+    if kept_raw_names:
+        print("Most common raw project names kept:")
+        for name, count in kept_raw_names.most_common(10):
+            print(f"  {name:<30} {count:>8,}")
     print("Validation:     OK")
     print(f"Raw output:     {FULL_PATH.relative_to(REPO_ROOT)}")
     print(f"Unified output: {UNIFIED_PATH.relative_to(REPO_ROOT)}")
+
+
+# ---------------------------------------------------------------------
+# Commit-CVE mapping
+# ---------------------------------------------------------------------
+
+_CVE_PATTERN = re.compile(r"CVE-\d{4}-\d{4,}", re.IGNORECASE)
+
+
+def save_commit_cve_mapping() -> None:
+    """Save distinct commit-CVE associations separately from code samples.
+
+    Big-Vul rows may repeat a commit/CVE pair across functions or dataset
+    splits. This file keeps one row per distinct pair and does not claim that
+    every CVE associated with a commit affects every changed function.
+    """
+    if not FULL_PATH.is_file():
+        raise FileNotFoundError(f"Raw Parquet does not exist: {FULL_PATH}")
+
+    commit_column = COLUMN_ALIASES["commit"]
+    cve_column = COLUMN_ALIASES["cve"]
+    raw_file = pq.ParquetFile(FULL_PATH)
+    pairs: set[tuple[str, str]] = set()
+
+    for batch in raw_file.iter_batches(
+        batch_size=4096,
+        columns=[commit_column, cve_column],
+        use_threads=False,
+    ):
+        raw = batch.to_pandas()
+        commits = raw[commit_column]
+        cves = raw[cve_column]
+
+        for commit_value, cve_value in zip(commits, cves, strict=False):
+            if pd.isna(commit_value) or pd.isna(cve_value):
+                continue
+
+            commit = str(commit_value).strip()
+            if not commit:
+                continue
+
+            # Extract CVE IDs instead of assuming the source field contains
+            # exactly one CVE; this also handles comma/list-like text values.
+            for cve in _CVE_PATTERN.findall(str(cve_value).upper()):
+                pairs.add((commit, cve))
+
+    INTERIM_DIR.mkdir(parents=True, exist_ok=True)
+    mapping = pd.DataFrame(sorted(pairs), columns=["commit", "cve"])
+    mapping = mapping.astype({"commit": "string", "cve": "string"})
+
+    tmp_path = MAPPING_PATH.with_name(MAPPING_PATH.stem + ".tmp.parquet")
+    tmp_path.unlink(missing_ok=True)
+    try:
+        mapping.to_parquet(tmp_path, index=False, compression=COMPRESSION)
+        # Check the temporary file before replacing any previous mapping.
+        check = pq.ParquetFile(tmp_path)
+        try:
+            if check.schema_arrow.names != ["commit", "cve"]:
+                raise RuntimeError("Commit-CVE mapping has an unexpected schema.")
+            if check.metadata.num_rows != len(mapping):
+                raise RuntimeError("Commit-CVE mapping row count verification failed.")
+        finally:
+            check.close()
+        tmp_path.replace(MAPPING_PATH)
+    except Exception:
+        tmp_path.unlink(missing_ok=True)
+        raise
+
+    print(f"Commit-CVE mapping rows: {len(mapping):,}")
+    print(f"Commit-CVE mapping:     {MAPPING_PATH.relative_to(REPO_ROOT)}")
 
 
 # ---------------------------------------------------------------------
@@ -497,6 +603,9 @@ def main() -> int:
         )
     else:
         download_raw()
+
+    # Preserve commit-CVE links independently from function-level samples.
+    save_commit_cve_mapping()
 
     # Build the unified dataset.
     build_unified()

@@ -1,4 +1,4 @@
-"""Load Zenodo data_Python.csv into SHIELD's unified 8-column schema.
+"""Load Zenodo data_Python.csv into SHIELD's unified 10-column schema (v1.2).
 
 From the repository root:
     python -m shield_core.datasets.python_loaders.zenodo_python_loader
@@ -7,6 +7,11 @@ Optional GitHub commit enrichment (uses GitHub API; may be rate limited):
     python -m shield_core.datasets.python_loaders.zenodo_python_loader --resolve-commits
 
 Set GITHUB_TOKEN in your environment to increase the API rate limit.
+
+Outputs (both are OVERWRITTEN if they already exist):
+    data/interim/zenodo_python.parquet                       unified-schema table
+    data/interim/zenodo_python_commit_cve_mapping.parquet    project / commit / date / cve links
+
 No deduplication is performed.
 """
 
@@ -15,33 +20,62 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import shutil
 from datetime import timedelta
 from pathlib import Path
 from urllib.error import HTTPError, URLError
-from urllib.parse import quote, urlparse
+from urllib.parse import quote
 from urllib.request import Request, urlopen
 
 import pandas as pd
 
-from shield_core.datasets.schema import COLUMNS, conform, validate
+from shield_core.datasets.project_names import project_from_repo_url
+from shield_core.datasets.schema import COLUMNS, conform, to_parquet, validate
 
 SOURCE = "zenodo_13870382_python"
+ZENODO_URL = "https://zenodo.org/records/13870382/files/data_Python.csv?download=1"
 DEFAULT_INPUT = Path("data/raw/zenodo_python/data_Python.csv")
 DEFAULT_OUTPUT = Path("data/interim/zenodo_python.parquet")
+DEFAULT_MAPPING = Path("data/interim/zenodo_python_commit_cve_mapping.parquet")
 DEFAULT_CACHE = Path("data/cache/zenodo_python_commit_cache.json")
-REQUIRED_INPUT_COLUMNS = {"vul_code", "is_vulnerable", "repo_url", "cwe_id", "patch"}
+REQUIRED_INPUT_COLUMNS = {
+    "vul_code",
+    "is_vulnerable",
+    "repo_url",
+    "cwe_id",
+    "patch",
+    "committer_date",
+    "cve_id",
+}
+MAPPING_COLUMNS = ["project", "commit", "date", "cve"]
+
+# Cached lookup results with these statuses are retried on the next run.
+RETRYABLE_STATUSES = {
+    "rate_limited",
+    "network_error",
+    "http_401",
+    "http_403",
+    "http_429",
+    "http_500",
+    "http_502",
+    "http_503",
+    "http_504",
+    "unexpected_response",
+    "search_truncated",
+}
 
 
-def project_from_repo_url(value: object) -> object:
-    if pd.isna(value) or not str(value).strip():
-        return pd.NA
-    parsed = urlparse(str(value).strip())
-    if parsed.hostname not in {"github.com", "www.github.com"}:
-        return pd.NA
-    segments = [s for s in parsed.path.strip("/").split("/") if s]
-    if len(segments) < 2:
-        return pd.NA
-    return f"{segments[0]}/{segments[1].removesuffix('.git')}"
+def _ensure_raw_csv(path: Path, url: str = ZENODO_URL) -> None:
+    """Download raw CSV from Zenodo if it is missing locally."""
+    if path.exists():
+        return
+    print(f"Downloading {url} -> {path} ...")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp_path = path.with_suffix(".csv.part")
+    request = Request(url, headers={"User-Agent": "SHIELD-dataset-loader"})
+    with urlopen(request, timeout=300) as response, tmp_path.open("wb") as out_file:
+        shutil.copyfileobj(response, out_file)
+    tmp_path.replace(path)
 
 
 def _github_json(url: str, token: str | None) -> object:
@@ -117,7 +151,8 @@ def enrich_commits(raw: pd.DataFrame, cache_path: Path, token: str | None) -> pd
     for repo, date, message in zip(
         raw["repo_url"], raw["committer_date"], raw["commit_msg"], strict=False
     ):
-        project = project_from_repo_url(repo)
+        # GitHub API lookups only make sense for GitHub repositories.
+        project = project_from_repo_url(repo, github_only=True)
         key = json.dumps(
             [
                 None if pd.isna(project) else project,
@@ -129,25 +164,10 @@ def enrich_commits(raw: pd.DataFrame, cache_path: Path, token: str | None) -> pd
         resolved.append(key)
         unique[key] = (project, date, message)
 
-        retryable_statuses = {
-            "rate_limited",
-            "network_error",
-            "http_401",
-            "http_403",
-            "http_429",
-            "http_500",
-            "http_502",
-            "http_503",
-            "http_504",
-            "unexpected_response",
-            "search_truncated",
-        }
-
     print(f"Unique repo/date/message lookups: {len(unique):,}")
 
     for n, (key, (project, date, message)) in enumerate(unique.items(), 1):
-        if key in cache and cache[key].get("status") not in retryable_statuses:
-            continue
+        if key in cache and cache[key].get("status") not in RETRYABLE_STATUSES:
             continue
         if pd.isna(project) or pd.isna(date) or pd.isna(message):
             result = {"sha": None, "status": "missing_metadata"}
@@ -178,6 +198,7 @@ def load(
     cache_path: Path = DEFAULT_CACHE,
     github_token: str | None = None,
 ) -> pd.DataFrame:
+    _ensure_raw_csv(input_path)
     raw = pd.read_csv(input_path, dtype={"cwe_id": "string"}, low_memory=False)
     missing = sorted(REQUIRED_INPUT_COLUMNS - set(raw.columns))
     if missing:
@@ -193,11 +214,17 @@ def load(
     )
     if labels.isna().any():
         raise ValueError("Unrecognized is_vulnerable values")
-    commits = (
-        enrich_commits(raw, cache_path, github_token)
-        if resolve_commits
-        else pd.Series(pd.NA, index=raw.index, dtype="string")
-    )
+
+    if resolve_commits:
+        commits = enrich_commits(raw, cache_path, github_token)
+        raw["commit"] = commits
+        raw.to_csv(input_path, index=False, encoding="utf-8")
+        print(f"Updated raw CSV with resolved commits: {input_path}")
+    elif "commit" in raw.columns:
+        commits = raw["commit"].astype("string")
+    else:
+        commits = pd.Series(pd.NA, index=raw.index, dtype="string")
+
     standardized = pd.DataFrame(
         {
             "code": raw["vul_code"],
@@ -206,6 +233,8 @@ def load(
             "cwe": raw["cwe_id"],
             "project": raw["repo_url"].map(project_from_repo_url),
             "commit": commits,
+            "date": raw["committer_date"],  # commit date, not CVE publication date
+            "cve": raw["cve_id"],
             "fixed_code": raw["patch"],
         }
     )
@@ -218,10 +247,62 @@ def load(
     return result
 
 
+def build_commit_cve_mapping(raw: pd.DataFrame) -> pd.DataFrame:
+    """Build CVE links directly from the ORIGINAL Zenodo CSV columns.
+
+    This intentionally does not depend on the conformed code table. Each source
+    record contributes its original repository, commit (when available), date,
+    and CVE association. Multiple CVE IDs in a cell are expanded to separate rows.
+    Rows without a CVE are excluded; missing commits are retained because the
+    original Zenodo records may not provide a resolvable SHA.
+    """
+    required = {"repo_url", "committer_date", "cve_id"}
+    missing = sorted(required - set(raw.columns))
+    if missing:
+        raise ValueError(
+            f"Cannot build mapping from original Zenodo CSV; missing columns: {missing}"
+        )
+
+    commits = (
+        raw["commit"].astype("string")
+        if "commit" in raw.columns
+        else pd.Series(pd.NA, index=raw.index, dtype="string")
+    )
+    links = pd.DataFrame(
+        {
+            "project": raw["repo_url"].map(project_from_repo_url),
+            "commit": commits,
+            "date": raw["committer_date"],
+            "cve": raw["cve_id"],
+        }
+    )
+
+    # The source CSV normally stores a single CVE per row; split cells that
+    # contain multiple IDs as a defensive measure, then validate the IDs.
+    links["cve"] = links["cve"].astype("string").str.upper().str.findall(r"CVE-\d{4}-\d{4,}")
+    links = links.explode("cve").dropna(subset=["cve"])
+    links["commit"] = links["commit"].astype("string").str.strip()
+    links["date"] = links["date"].astype("string").str.strip()
+    links["project"] = links["project"].astype("string").str.strip()
+    return links[MAPPING_COLUMNS].drop_duplicates().reset_index(drop=True).astype("string")
+
+
+def save_overwrite(df: pd.DataFrame, path: Path, *, mapping: bool = False) -> None:
+    """Write a parquet file, replacing it if it already exists."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    if path.exists():
+        print(f"Overwriting existing file: {path}")
+    if mapping:
+        df.to_parquet(path, engine="pyarrow", index=False)
+    else:
+        to_parquet(df, path)  # stable Arrow schema (list<string> for cwe / cve)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--input", type=Path, default=DEFAULT_INPUT)
     parser.add_argument("--output", type=Path, default=DEFAULT_OUTPUT)
+    parser.add_argument("--mapping-output", type=Path, default=DEFAULT_MAPPING)
     parser.add_argument("--resolve-commits", action="store_true")
     parser.add_argument("--cache", type=Path, default=DEFAULT_CACHE)
     args = parser.parse_args()
@@ -231,12 +312,26 @@ def main() -> None:
         cache_path=args.cache,
         github_token=os.getenv("GITHUB_TOKEN"),
     )
-    args.output.parent.mkdir(parents=True, exist_ok=True)
-    df.to_parquet(args.output, engine="pyarrow", index=False)
+    # Build the mapping from the source CSV itself, not from the standardized
+    # code dataframe. If --resolve-commits was used, load() has already updated
+    # the CSV's commit column before this read.
+    raw_for_mapping = pd.read_csv(args.input, dtype={"cwe_id": "string"}, low_memory=False)
+    mapping = build_commit_cve_mapping(raw_for_mapping)
+
+    save_overwrite(df, args.output)
+    save_overwrite(mapping, args.mapping_output, mapping=True)
+
+    labels = df["label"].value_counts().to_dict()
     print(f"Saved: {args.output}")
+    print(f"Saved: {args.mapping_output} ({len(mapping):,} project/commit-CVE links)")
     print(f"Rows: {len(df):,} | Columns: {list(df.columns)}")
-    print(f"Labels: {df['label'].value_counts().to_dict()}")
+    print(f"Labels: {labels}")
+    if labels.get(0, 0) == 0:
+        print("NOTE: no label-0 rows in this source (see D39 / patched negatives in splits.py)")
     print(f"Missing commits: {df['commit'].isna().sum():,}")
+    print(f"Non-null dates: {df['date'].notna().sum():,}")
+    print(f"Rows with at least one CVE: {int(df['cve'].map(len).gt(0).sum()):,}")
+    print(f"Rows with at least one CWE: {int(df['cwe'].map(len).gt(0).sum()):,}")
     print("Deduplication: NOT performed")
 
 
