@@ -46,14 +46,14 @@ COMMITS = pd.DataFrame(
 )
 FIXES = pd.DataFrame(
     {
-        "cve_id": ["CVE-1", "CVE-2", "CVE-3"],
+        "cve_id": ["CVE-2020-0001", "CVE-2020-0002", "CVE-bad"],
         "hash": ["h1", "h1", "h2"],
         "repo_url": ["u", "u", "v"],
     }
 )
 CWE_CLASSIFICATION = pd.DataFrame(
     {
-        "cve_id": ["CVE-1", "CVE-2", "CVE-3"],
+        "cve_id": ["CVE-2020-0001", "CVE-2020-0002", "CVE-bad"],
         "cwe_id": ["CWE-79", "CWE-20", "NVD-CWE-Other"],
     }
 )
@@ -116,15 +116,20 @@ def test_join_cwe_sorts_by_number_and_removes_duplicates():
 @pytest.mark.parametrize(
     "url, expected",
     [
-        ("https://github.com/org/proj", "proj"),
-        ("https://github.com/org/proj.git", "proj"),
-        ("https://github.com/org/proj/", "proj"),
+        ("https://github.com/org/proj", "org/proj"),
+        ("https://github.com/org/proj.git", "org/proj"),
+        ("https://github.com/org/proj/", "org/proj"),
         (None, None),
         (float("nan"), None),
     ],
 )
 def test_project_name(url, expected):
-    assert CVEfixesPythonLoader._project_name(url) == expected
+    df = pd.DataFrame({"project": [url]})
+    out = CVEfixesPythonLoader()._clean_project_names(df)["project"].iloc[0]
+    if expected is None:
+        assert pd.isna(out)
+    else:
+        assert out == expected
 
 
 # ---------- merging ----------
@@ -151,6 +156,21 @@ def test_aggregate_cwe_per_commit(loader):
     cwe = dict(zip(out["hash"], out["cwe"], strict=True))
     assert cwe["h1"] == "CWE-20, CWE-79"  # two CVEs on the same commit
     assert "h2" not in cwe  # only an NVD placeholder
+
+
+def test_aggregate_cve_per_commit(loader):
+    out = loader._aggregate_cve_per_commit(loader._load_tables()["fixes"])
+    cve = dict(zip(out["hash"], out["cve"], strict=True))
+    assert cve["h1"] == ["CVE-2020-0001", "CVE-2020-0002"]
+    assert "h2" not in cve  # malformed CVE id is dropped
+
+
+def test_save_commit_cve_mapping(loader):
+    path = loader._save_commit_cve_mapping(loader._load_tables()["fixes"])
+    mapping = pd.read_parquet(path)
+    assert path.name == "cvefixes_python_commit_cve_mapping.parquet"
+    assert list(mapping.columns) == ["commit", "cve"]
+    assert len(mapping) == 2
 
 
 def test_prepare_commits_removes_duplicate_hashes(loader):
@@ -187,7 +207,7 @@ def test_rename_columns(loader, merged):
 
 def test_clean_project_names(loader, merged):
     out = loader._clean_project_names(loader._rename_columns(merged))
-    assert set(out["project"].dropna()) == {"proj", "other"}
+    assert set(out["project"].dropna()) == {"org/proj", "org/other"}
 
 
 def test_filter_python_only(loader, merged):
@@ -220,11 +240,12 @@ def test_create_safe_samples():
     df = pd.DataFrame(
         {"code": ["old1", "old2"], "fixed_code": ["new1", pd.NA], "cwe": ["CWE-79", "CWE-79"]}
     )
-    out = CVEfixesPythonLoader()._create_safe_samples(df)
-    assert out["code"].tolist() == ["new1"]  # no patched version, no safe sample1
+    out = CVEfixesPythonLoader()._create_safe_samples(df.assign(cve=[["CVE-2020-0001"]] * 2))
+    assert out["code"].tolist() == ["new1"]  # no patched version, no safe sample
     assert out["label"].tolist() == [0]
     assert out["fixed_code"].isna().all()
     assert out["cwe"].isna().all()
+    assert out["cve"].isna().all()
 
 
 def test_concat_samples():
@@ -252,7 +273,7 @@ def test_validate_schema_raises_on_bad_label(loader):
 
 
 def test_save_to_parquet(loader):
-    df = pd.DataFrame({"code": ["x"], "label": [1]})
+    df = loader._apply_schema(pd.DataFrame({"code": ["x"], "language": ["python"], "label": [1]}))
     path = loader._save_to_parquet(df)
     assert path.name == "cvefixes_python.parquet"
     assert path.exists()
@@ -278,14 +299,18 @@ def test_execute_pipeline_end_to_end(loader):
     assert safe["code"] == "def a(): return 2"
     assert pd.isna(safe["fixed_code"])
     assert len(safe["cwe"]) == 0
+    assert len(safe["cve"]) == 0
 
     vuln_a = out[out["code"] == "def a(): return 1"].iloc[0]
     assert vuln_a["fixed_code"] == "def a(): return 2"
-    assert vuln_a["project"] == "proj"
+    assert vuln_a["project"] == "org/proj"
     assert vuln_a["commit"] == "h1"
     assert "CWE-20" in vuln_a["cwe"]
     assert "CWE-79" in vuln_a["cwe"]  # h1 has CWE-20 and CWE-79
+    assert list(vuln_a["cve"]) == ["CVE-2020-0001", "CVE-2020-0002"]
 
     vuln_f = out[out["code"] == "def f(): x"].iloc[0]
     assert pd.isna(vuln_f["fixed_code"])  # identical code is not a fix
     assert len(vuln_f["cwe"]) == 0  # h2 only has an NVD placeholder
+    assert len(vuln_f["cve"]) == 0  # and a malformed CVE id
+    assert (path.parent / "cvefixes_python_commit_cve_mapping.parquet").exists()

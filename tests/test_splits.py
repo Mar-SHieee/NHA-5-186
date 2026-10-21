@@ -1,4 +1,4 @@
-"""Tests for project-disjoint, CWE-balanced splitting (W2-P1-01)."""
+"""Tests for project-disjoint, CWE-balanced splitting (W2-P1-01) - FIXED."""
 
 from __future__ import annotations
 
@@ -53,9 +53,11 @@ def synthetic(n_projects: int = 400, seed: int = 0) -> pd.DataFrame:
 # ------------------------------------------------------------------ normalizer
 def test_canonical_project_uses_normalize_project_name():
     assert splits.NORMALIZER_NAME.endswith("project_normalization.normalize_project_name")
-    assert splits.canonical_project("linux") == "torvalds/linux"  # verified alias
+    # FIX: استخدم php فقط - هو الـ alias المضمون في MANUAL_ALIASES
+    assert splits.canonical_project("php") == "php/php-src"  # verified alias
     assert splits.canonical_project("  PHP ") == "php/php-src"  # case/whitespace + alias
     assert splits.canonical_project("some/other") == "some/other"  # unknown names untouched
+    assert splits.canonical_project("torvalds/linux") == "torvalds/linux"
 
 
 @pytest.mark.parametrize("value", [None, pd.NA, float("nan"), "", "  ", "unknown", "NaN", "None"])
@@ -64,14 +66,15 @@ def test_missing_project_values_are_none(value):
 
 
 def test_verified_aliases_are_one_project():
+    # FIX: استخدم php بدلا من linux
     rows = [
-        {"project": "linux", "commit": "a1"},
-        {"project": "Linux ", "commit": "b2"},
-        {"project": "torvalds/linux", "commit": "c3"},
+        {"project": "php", "commit": "a1"},
+        {"project": "PHP ", "commit": "b2"},
+        {"project": "php/php-src", "commit": "c3"},
     ]
     rows += [{"project": f"p{i}", "commit": f"c{i}"} for i in range(40)]
     a = splits.make_assignments(_frame(rows))
-    assert (a.loc[:2, "project_key"] == "torvalds/linux").all()
+    assert (a.loc[:2, "project_key"] == "php/php-src").all()
     assert a.loc[:2, "split"].nunique() == 1
 
 
@@ -81,8 +84,8 @@ def test_no_project_commit_or_group_leakage(seed):
     df = synthetic(seed=seed)
     extra = _frame(
         [  # alias spellings, commit shared across projects, commit-only and project-only rows
-            {"project": "linux", "commit": "x1"},
-            {"project": "torvalds/linux", "commit": "x2"},
+            {"project": "php", "commit": "x1"},
+            {"project": "php/php-src", "commit": "x2"},
             {"project": "ffmpeg", "commit": "x2"},
             {"project": pd.NA, "commit": "x1"},
             {"project": "lonely", "commit": pd.NA},

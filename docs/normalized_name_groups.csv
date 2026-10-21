@@ -1,0 +1,101 @@
+project_normalized,original_names,num_original_names
+3proxy/3proxy,['3proxy/3proxy' 'z3APA3A/3proxy'],2
+android,['Android' 'android'],2
+aosp-mirror/platform_bionic,['android/platform_bionic' 'aosp-mirror/platform_bionic'],2
+artifexsoftware/ghostpdl,"['ArtifexSoftware/ghostpdl' 'ArtifexSoftware/mujs' 'ArtifexSoftware/mupdf'
+ 'ghostscript']",4
+barebox/barebox,['barebox/barebox' 'saschahauer/barebox'],2
+beanstalkd/beanstalkd,['beanstalkd/beanstalkd' 'kr/beanstalkd'],2
+bluez/bluez,['bluez' 'bluez/bluez'],2
+bminor/binutils-gdb,['binutils-gdb' 'bminor/binutils-gdb'],2
+bminor/glibc,['bminor/glibc' 'glibc'],2
+boothj5/profanity,['boothj5/profanity' 'profanity-im/profanity'],2
+capstone-engine/capstone,['aquynh/capstone' 'capstone-engine/capstone'],2
+chakra-core/chakracore,['Microsoft/ChakraCore' 'chakra-core/ChakraCore'],2
+chromium/chromium,['chromium' 'chromium/chromium'],2
+cisco-talos/clamav,['Cisco-Talos/clamav' 'Cisco-Talos/clamav-devel' 'vrtadmin/clamav-devel'],3
+containers/bubblewrap,['containers/bubblewrap' 'projectatomic/bubblewrap'],2
+cornelisnetworks/opa-fm,['01org/opa-fm' 'cornelisnetworks/opa-fm'],2
+covesa/dlt-daemon,['COVESA/dlt-daemon' 'michael-methner/dlt-daemon'],2
+curl/curl,['bagder/curl' 'curl/curl'],2
+dbus/dbus-glib,['dbus' 'dbus/dbus-glib'],2
+dieterbe/uzbl,['Dieterbe/uzbl' 'uzbl/uzbl'],2
+dinhvh/libetpan,['dinhvh/libetpan' 'dinhviethoa/libetpan'],2
+drm/drm-misc,['drm' 'drm/drm-misc'],2
+exim/exim,['Exim/exim' 'exim'],2
+facebook/mvfst,['facebook/mvfst' 'facebookincubator/mvfst'],2
+ffmpeg/ffmpeg,['FFmpeg/FFmpeg' 'ffmpeg' 'ffmpeg/ffmpeg'],3
+file/file,['file/file' 'glensc/file'],2
+freetype/freetype2,"['acl' 'bash' 'bminor/bash' 'coreutils/gnulib' 'freedink/dfarc'
+ 'freetype/freetype2' 'freetype/freetype2-demos'
+ 'gitlab.com/gnutls/gnutls' 'gnash' 'gnulib' 'gnutls' 'grep' 'libcdio'
+ 'libidn' 'libtasn1' 'savannah' 'tar' 'weechat' 'weechat/weechat' 'wget']",20
+fstark-prog/jhead,['F-ZhaoYang/jhead' 'Fstark-prog/jhead'],2
+git/git,['git' 'git/git'],2
+glennrp/libpng,['glennrp/libpng' 'pnggroup/libpng'],2
+gnuaspell/aspell,['GNUAspell/aspell' 'gnuaspell/aspell'],2
+googlefonts/sfntly,['googlefonts/sfntly' 'googlei18n/sfntly'],2
+gstreamer/gst-plugins-good,"['gstreamer' 'gstreamer/gst-plugins-bad' 'gstreamer/gst-plugins-base'
+ 'gstreamer/gst-plugins-good']",4
+haproxy/haproxy,['haproxy' 'haproxy/haproxy'],2
+harfbuzz/harfbuzz,['behdad/harfbuzz' 'harfbuzz/harfbuzz'],2
+imagemagick/librsvg,['ImageMagick/librsvg' 'ImageMagick/rsvg'],2
+jabberd2/jabberd2,['Jabberd2/jabberd2' 'jabberd2/jabberd2'],2
+jasper-software/jasper,['jasper-software/jasper' 'mdadams/jasper'],2
+jmacd/xdelta-gpl,['jmacd/xdelta-devel' 'jmacd/xdelta-gpl'],2
+jqlang/jq,['jqlang/jq' 'stedolan/jq'],2
+kernel/git/avi/kvm,['kernel/git/avi/kvm' 'kvm'],2
+kornelski/pngquant,['kornelski/pngquant' 'pornel/pngquant'],2
+lewdlime/abcm2ps,['leesavide/abcm2ps' 'lewdlime/abcm2ps'],2
+libav/libav,['libav' 'libav/libav'],2
+libreoffice/core,['LibreOffice/core' 'libreoffice/core'],2
+libressl/openbsd,['libressl-portable/openbsd' 'libressl/openbsd'],2
+libressl/portable,['libressl-portable/portable' 'libressl/portable'],2
+libsndfile/libsndfile,['erikd/libsndfile' 'libsndfile/libsndfile'],2
+libvirt/libvirt,['libvirt' 'libvirt/libvirt'],2
+libxsmm/libxsmm,['hfp/libxsmm' 'libxsmm/libxsmm'],2
+lldpd/lldpd,['lldpd/lldpd' 'vincentbernat/lldpd'],2
+mapserver/mapserver,['MapServer/MapServer' 'mapserver/mapserver'],2
+mbed-tls/mbedtls,['ARMmbed/mbedtls' 'Mbed-TLS/mbedtls' 'polarssl/polarssl'],3
+mc2-project/opaque-sql,['mc2-project/opaque-sql' 'ucbrise/opaque'],2
+networkblockdevice/nbd,['NetworkBlockDevice/nbd' 'yoe/nbd'],2
+openidc/mod_auth_openidc,"['OpenIDC/mod_auth_openidc' 'pingidentity/mod_auth_openidc'
+ 'zmartzone/mod_auth_openidc']",3
+owasp-modsecurity/modsecurity,['SpiderLabs/ModSecurity' 'owasp-modsecurity/ModSecurity'],2
+php/php-src,['php' 'php/php-src'],2
+posthog/posthog,['PostHog/posthog' 'posthog/posthog'],2
+pycrypto/pycrypto,['dlitz/pycrypto' 'pycrypto/pycrypto'],2
+qemu/qemu,['qemu' 'qemu/qemu'],2
+quassel/quassel,['quassel' 'quassel/quassel'],2
+radareorg/radare2,['radare/radare2' 'radareorg/radare2'],2
+radvd-project/radvd,['radvd-project/radvd' 'reubenhwk/radvd'],2
+redis/redis,['antirez/redis' 'redis/redis'],2
+samba-team/samba,['samba' 'samba-team/samba'],2
+sektioneins/suhosin,['sektioneins/suhosin' 'stefanesser/suhosin'],2
+seleniumhq/selenium,['SeleniumHQ/selenium' 'seleniumhq/selenium'],2
+solokeys/solo1,['solokeys/solo' 'solokeys/solo1'],2
+spheredev/neosphere,['fatcerberus/minisphere' 'spheredev/neosphere'],2
+spice/libcacard,['spice' 'spice/libcacard'],2
+storaged-project/udisks,['storaged-project/udisks' 'udisks'],2
+strongswan/strongswan,['strongswan' 'strongswan/strongswan'],2
+systemd/systemd,['keszybz/systemd' 'systemd/systemd'],2
+tiann/kernelsu,['tiann/KernelSU' 'tiann/kernelsu'],2
+torvalds/linux,['torvalds/linux' 'xfs/xfs-linux'],2
+unetworking/uwebsockets,['uNetworking/uWebSockets' 'uWebSockets/uWebSockets'],2
+util-linux/util-linux,['karelzak/util-linux' 'util-linux/util-linux'],2
+wichert/pyrad,['pyradius/pyrad' 'wichert/pyrad'],2
+wireshark/wireshark,['wireshark' 'wireshark/wireshark'],2
+xorg/app/xrdb,['xorg/app/xrdb' 'xrdb'],2
+xorg/lib/libice,['libICE' 'xorg/lib/libICE'],2
+xorg/lib/libx11,['libx11' 'xorg/lib/libX11'],2
+xorg/lib/libxcursor,['xcursor' 'xorg/lib/libXcursor'],2
+xorg/lib/libxdmcp,['libXdmcp' 'xorg/lib/libXdmcp'],2
+xorg/lib/libxfixes,['libXfixes' 'xorg/lib/libXfixes'],2
+xorg/lib/libxfont,['libxfont' 'xorg/lib/libXfont'],2
+xorg/lib/libxi,['libXi' 'xorg/lib/libXi'],2
+xorg/lib/libxpm,['libXpm' 'xorg/lib/libXpm'],2
+xorg/lib/libxrender,['libXrender' 'xorg/lib/libXrender'],2
+xorg/lib/libxtst,['libXtst' 'xorg/lib/libXtst'],2
+xorg/lib/libxv,['libXv' 'xorg/lib/libXv'],2
+xorg/lib/libxvmc,['libXvMC' 'xorg/lib/libXvMC'],2
+xorg/xserver,['xorg/xserver' 'xserver'],2

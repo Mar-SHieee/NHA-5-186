@@ -1,0 +1,89 @@
+repo,names
+linux,gregkh/linux; kernel/git/arm64/linux; kernel/git/chao/linux; kernel/git/chris/linux; kernel/git/powerpc/linux; kernel/git/sunxi/linux; mjg59/linux; torvalds/linux
+radare2,radare/radare2; radareorg/radare2
+qemu,birkelund/qemu; bonzini/qemu; qemu-project/qemu; qemu/qemu
+freerdp,akallabeth/freerdp; freerdp/freerdp
+ovs,cloudbase/ovs; openvswitch/ovs
+redis,antirez/redis; redis/redis
+envoy,envoyproxy/envoy; istio/envoy
+libtiff,gitlab.com/libtiff/libtiff; vadz/libtiff
+jerryscript,jerryscript-project/jerryscript; zherczeg/jerryscript
+chakracore,chakra-core/chakracore; microsoft/chakracore
+systemd,keszybz/systemd; systemd/systemd
+core,dovecot/core; home-assistant/core; libreoffice/core; onlyoffice/core; ractf/core
+openssl,openssl/openssl; ruby/openssl
+jasper,jasper-software/jasper; mdadams/jasper
+curl,bagder/curl; curl/curl
+bitcoin,bitcoin/bitcoin; sipa/bitcoin
+harfbuzz,behdad/harfbuzz; harfbuzz/harfbuzz
+file,file/file; glensc/file
+libetpan,dinhvh/libetpan; dinhviethoa/libetpan
+asterisk,asterisk/asterisk; jcollie/asterisk; pruiz/asterisk
+librsvg,gnome/librsvg; imagemagick/librsvg
+openjpeg,szukw000/openjpeg; uclouvain/openjpeg
+mujs,artifexsoftware/mujs; ccxvii/mujs
+suricata,inliniac/suricata; oisf/suricata
+libsixel,libsixel/libsixel; saitoha/libsixel
+civetweb,ceph/civetweb; civetweb/civetweb
+libsndfile,erikd/libsndfile; libsndfile/libsndfile
+modsecurity,owasp-modsecurity/modsecurity; spiderlabs/modsecurity
+wireless,kernel/git/linville/wireless; kernel/git/wireless/wireless
+llvm-project,llvm/llvm-project; llvmbot/llvm-project
+mbedtls,armmbed/mbedtls; mbed-tls/mbedtls
+podofo,mksdev/podofo; podofo/podofo
+util-linux,karelzak/util-linux; util-linux/util-linux
+tigervnc,cendioossman/tigervnc; tigervnc/tigervnc
+mutt,gitlab.com/muttmua/mutt; muttmua/mutt
+dlt-daemon,covesa/dlt-daemon; michael-methner/dlt-daemon
+mod_auth_openidc,openidc/mod_auth_openidc; pingidentity/mod_auth_openidc; zmartzone/mod_auth_openidc
+jq,jqlang/jq; stedolan/jq
+unrar,aawc/unrar; pmachapman/unrar
+synapse,element-hq/synapse; matrix-org/synapse
+zfs,fransurbo/zfs; openzfs/zfs
+libvips,jcupitt/libvips; libvips/libvips
+sound,kernel/git/broonie/sound; kernel/git/tiwai/sound
+abcm2ps,leesavide/abcm2ps; lewdlime/abcm2ps
+varnish-cache,varnish/varnish-cache; varnishcache/varnish-cache
+net-next,kernel/git/netdev/net-next; kernel/git/pabeni/net-next
+uzbl,dieterbe/uzbl; uzbl/uzbl
+openbsd,libressl-portable/openbsd; libressl/openbsd
+mod_auth_mellon,latchset/mod_auth_mellon; uninett/mod_auth_mellon
+cups,apple/cups; openprinting/cups
+pillow,python-imaging/pillow; python-pillow/pillow
+freeradius-server,alandekok/freeradius-server; freeradius/freeradius-server
+nbd,networkblockdevice/nbd; yoe/nbd
+opa-fm,01org/opa-fm; cornelisnetworks/opa-fm
+libplist,libimobiledevice/libplist; uikit0/libplist
+beanstalkd,beanstalkd/beanstalkd; kr/beanstalkd
+libpng,glennrp/libpng; pnggroup/libpng
+ettercap,ettercap/ettercap; locutusofborg/ettercap
+lldpd,lldpd/lldpd; vincentbernat/lldpd
+bubblewrap,containers/bubblewrap; projectatomic/bubblewrap
+didiwiki,openedhand/didiwiki; yarolig/didiwiki
+radicale,kozea/radicale; unrud/radicale
+ppp,paulusmack/ppp; ppp-project/ppp
+capstone,aquynh/capstone; capstone-engine/capstone
+profanity,boothj5/profanity; profanity-im/profanity
+xbmc,fuzzard/xbmc; xbmc/xbmc
+barebox,barebox/barebox; saschahauer/barebox
+sfntly,googlefonts/sfntly; googlei18n/sfntly
+platform_bionic,android/platform_bionic; aosp-mirror/platform_bionic
+bcfg2,bcfg2/bcfg2; solj/bcfg2
+pango,bratsche/pango; gnome/pango
+qpress,evgeniypatlan/qpress; pierrelvx/qpress
+uwebsockets,unetworking/uwebsockets; uwebsockets/uwebsockets
+libxsmm,hfp/libxsmm; libxsmm/libxsmm
+pngquant,kornelski/pngquant; pornel/pngquant
+jhead,f-zhaoyang/jhead; fstark-prog/jhead; matthias-wandel/jhead
+mvfst,facebook/mvfst; facebookincubator/mvfst
+salt,saltstack/salt; twangboy/salt
+libidn2,gitlab.com/libidn/libidn2; libidn/libidn2
+radvd,radvd-project/radvd; reubenhwk/radvd
+clamav-devel,cisco-talos/clamav-devel; vrtadmin/clamav-devel
+3proxy,3proxy/3proxy; z3apa3a/3proxy
+pycrypto,dlitz/pycrypto; legrandin/pycrypto; pycrypto/pycrypto
+portable,libressl-portable/portable; libressl/portable
+suhosin,sektioneins/suhosin; stefanesser/suhosin
+pyrad,pyradius/pyrad; wichert/pyrad
+ajenti,ajenti/ajenti; eugeny/ajenti
+requests,kennethreitz/requests; psf/requests

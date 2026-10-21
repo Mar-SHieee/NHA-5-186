@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 
 # Works when executed as `python scripts/acceptance_check.py` from project root.
 import sys
@@ -30,11 +31,15 @@ if str(ROOT) not in sys.path:
 
 from languages import registry  # noqa: E402
 from shield_core.datasets.dedupe import (  # noqa: E402
+    PRIORITY_ORDER,
     ConservativeNormalizer,
     Sha256Hasher,
+    build_layoutless_normalizers,
     build_normalizers,
 )
-from shield_core.datasets.schema import COLUMNS, validate  # noqa: E402
+from shield_core.datasets.schema import COLUMNS, LIST_COLUMNS, validate  # noqa: E402
+
+_WHITESPACE = re.compile(r"\s+")
 
 
 class DatasetSource(Protocol):
@@ -58,6 +63,10 @@ class ParquetDatasetSource:
             raise FileNotFoundError(f"No *_deduped.parquet files found in {self.directory}")
         return files
 
+    def missing_expected(self, expected: tuple[str, ...]) -> list[str]:
+        """Datasets dedupe.py is supposed to produce that have no *_deduped.parquet."""
+        return [n for n in expected if not (self.directory / f"{n}_deduped.parquet").exists()]
+
     def read(self, path: Path) -> pd.DataFrame:
         return pd.read_parquet(path)
 
@@ -78,6 +87,18 @@ class DedupeCompatibleHasher:
         self.normalizers = build_normalizers(registry.all_languages())
         self.fallback = ConservativeNormalizer()
         self.hasher = Sha256Hasher()
+        self.layoutless = build_layoutless_normalizers(registry.all_languages())
+
+    def loose_keys(self, code: object, language: object) -> tuple[str, str, bool] | None:
+        """Layout-insensitive keys of dedupe.py (Python only): (layout key, squash key, flat?)."""
+        lang = str(language)
+        normalizer = self.layoutless.get(lang)
+        if normalizer is None or not isinstance(code, str) or not code.strip():
+            return None
+        text = normalizer.normalize(code)
+        layout = self.hasher.hash("layout\0" + lang + "\0" + text) if text else ""
+        squash = self.hasher.hash("squash\0" + lang + "\0" + _WHITESPACE.sub("", code))
+        return layout, squash, "\n" not in code.replace("\r\n", "\n").strip()
 
     def hash(self, code: object, language: object) -> str:
         if not isinstance(code, str) or not code.strip():
@@ -131,6 +152,10 @@ class DatasetAudit:
     hashes: set[str]
     hash_labels: dict[str, set[str]]
     missing_commits: int | None
+    empty_lists: dict[str, int]
+    # layout-insensitive key -> strict hashes of rows WITHOUT / WITH line breaks (Python only)
+    flat_loose: dict[str, set[str]]
+    laid_loose: dict[str, set[str]]
 
     @property
     def preliminary_pass(self) -> bool:
@@ -148,10 +173,11 @@ class DatasetAuditor:
         if list(df.columns) != COLUMNS:
             errors.append(f"columns differ from schema.COLUMNS: {list(df.columns)}")
         if set(COLUMNS).issubset(df.columns):
-            # Parquet converts list columns to ndarray; schema.validate expects lists.
-            # Convert on a temporary copy ONLY; never rewrite or re-conform data.
+            # Parquet converts list columns (cwe AND cve) to ndarray; schema.validate expects
+            # lists. Convert on a temporary copy ONLY; never rewrite or re-conform data.
             check = df.copy()
-            check["cwe"] = check["cwe"].map(cwe_values)
+            for col in LIST_COLUMNS:
+                check[col] = check[col].map(cwe_values)
             try:
                 errors.extend(validate(check))
             except (TypeError, ValueError) as exc:
@@ -160,6 +186,12 @@ class DatasetAuditor:
             errors.append(f"missing schema columns: {sorted(set(COLUMNS) - set(df.columns))}")
 
         missing = {str(col): int(df[col].isna().sum()) for col in df.columns}
+        # List columns are never NA; "missing" for them means an empty list.
+        empty_lists = {
+            col: int(df[col].map(lambda v: not cwe_values(v)).sum())
+            for col in LIST_COLUMNS
+            if col in df.columns
+        }
         empty_strings = {}
         for col in df.columns:
             if pd.api.types.is_string_dtype(df[col]) or pd.api.types.is_object_dtype(df[col]):
@@ -181,6 +213,19 @@ class DatasetAuditor:
             for h, label in zip(hashes, labels, strict=True):
                 if h:
                     hash_labels[h].add(str(label))
+
+        flat_loose: dict[str, set[str]] = defaultdict(set)
+        laid_loose: dict[str, set[str]] = defaultdict(set)
+        if {"code", "language"}.issubset(df.columns):
+            for h, code, language in zip(hashes, df["code"], df["language"], strict=True):
+                keys = self.hasher.loose_keys(code, language) if h else None
+                if keys is None:
+                    continue
+                layout, squash, is_flat = keys
+                target = flat_loose if is_flat else laid_loose
+                for key in (layout, squash):
+                    if key:
+                        target[key].add(h)
 
         total_cwe = Counter()
         vuln_cwe = Counter()
@@ -220,6 +265,9 @@ class DatasetAuditor:
             hashes=set(valid_hashes.tolist()),
             hash_labels=dict(hash_labels),
             missing_commits=missing.get("commit"),
+            empty_lists=empty_lists,
+            flat_loose=dict(flat_loose),
+            laid_loose=dict(laid_loose),
         )
 
 
@@ -242,12 +290,40 @@ class AcceptanceRunner:
                 f"verdict={'PRELIMINARY PASS' if audit.preliminary_pass else 'REVIEW'}",
                 flush=True,
             )
-        report = self.render(audits)
+        missing_expected = self.source.missing_expected(PRIORITY_ORDER)
+        if missing_expected:
+            print(f"[WARNING] No *_deduped.parquet for: {missing_expected}", flush=True)
+        report = self.render(audits, missing_expected)
         self.writer.write(report)
         return audits
 
     @staticmethod
-    def render(audits: list[DatasetAudit]) -> str:
+    def residual_layout_matches(audits: list[DatasetAudit]) -> tuple[int, int]:
+        """Flattened Python code (no line breaks) that still matches a laid-out copy.
+
+        Returns (unambiguous, ambiguous) counts of distinct flattened code variants.
+        Unambiguous = exactly one laid-out version matches, so dedupe.py should have linked
+        them (expected 0). Ambiguous = several laid-out versions match; dedupe leaves those.
+        """
+        flat: dict[str, set[str]] = defaultdict(set)
+        laid: dict[str, set[str]] = defaultdict(set)
+        for a in audits:
+            for key, hashes in a.flat_loose.items():
+                flat[key] |= hashes
+            for key, hashes in a.laid_loose.items():
+                laid[key] |= hashes
+        unambiguous: set[str] = set()
+        ambiguous: set[str] = set()
+        for key, flat_hashes in flat.items():
+            versions = laid.get(key, set())
+            if len(versions) == 1:
+                unambiguous |= flat_hashes
+            elif len(versions) > 1:
+                ambiguous |= flat_hashes
+        return len(unambiguous), len(ambiguous - unambiguous)
+
+    @staticmethod
+    def render(audits: list[DatasetAudit], missing_expected: list[str] | None = None) -> str:
         lines = [
             "# SHIELD Dataset Acceptance Audit",
             "",
@@ -278,6 +354,7 @@ class AcceptanceRunner:
                 "",
                 f"- Schema errors: `{json.dumps(a.schema_errors, ensure_ascii=False)}`",
                 f"- Missing values: `{json.dumps(a.missing, ensure_ascii=False)}`",
+                f"- Empty lists (cwe / cve): `{json.dumps(a.empty_lists, ensure_ascii=False)}`",
                 (
                     f"- Empty strings (non-CWE columns): "
                     f"`{json.dumps(a.empty_strings, ensure_ascii=False)}`"
@@ -317,7 +394,23 @@ class AcceptanceRunner:
             for h, labels in a.hash_labels.items():
                 all_labels[h].update(labels)
         conflicts = sum(len(labels) > 1 for labels in all_labels.values())
+        unambiguous, ambiguous = AcceptanceRunner.residual_layout_matches(audits)
         lines += [
+            "",
+            "## Expected datasets and layout-insensitive matches",
+            "",
+            (
+                "- Datasets expected by `dedupe.PRIORITY_ORDER` with no `*_deduped.parquet`: "
+                f"**{', '.join(missing_expected) if missing_expected else 'none'}**."
+            ),
+            (
+                "- Python code without line breaks that still matches exactly one laid-out copy: "
+                f"**{unambiguous:,}** (expected 0; anything else means dedupe missed a duplicate)."
+            ),
+            (
+                "- Python code without line breaks that matches several different laid-out "
+                f"versions (left alone on purpose): {ambiguous:,}."
+            ),
             "",
             "## Label conflicts and limitations",
             "",
@@ -327,7 +420,7 @@ class AcceptanceRunner:
                 "normalizers and SHA-256 implementation as `dedupe.py`."
             ),
             (
-                "- CWE arrays decoded from Parquet are "
+                "- CWE and CVE arrays decoded from Parquet are "
                 "converted to Python lists only for `schema.validate()`."
             ),
             (

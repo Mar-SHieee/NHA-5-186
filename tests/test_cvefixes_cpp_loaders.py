@@ -67,3 +67,18 @@ def test_language_map_keeps_c_and_cpp_apart(loader):
     df = pd.DataFrame({"language": ["C", "C++", "Python"]})
     kept = loader._normalize_language(loader._filter_c_cpp_only(df))
     assert list(kept["language"]) == ["c", "cpp"]
+
+
+def test_project_names_become_owner_repo(loader):
+    urls = ["https://github.com/torvalds/linux", "https://github.com/FFmpeg/FFmpeg.git", None]
+    cleaned = loader._clean_project_names(pd.DataFrame({"project": urls}))["project"]
+    assert list(cleaned.iloc[:2]) == ["torvalds/linux", "FFmpeg/FFmpeg"]
+    assert pd.isna(cleaned.iloc[2])
+
+
+def test_safe_samples_have_no_cve(loader, method_change):
+    pairs = loader._blank_identical_fixes(loader._pair_old_with_new(method_change))
+    safe = loader._create_safe_samples(
+        pairs.assign(cwe="CWE-787", cve=[["CVE-2020-0001"]] * len(pairs))
+    )
+    assert safe["cve"].isna().all()

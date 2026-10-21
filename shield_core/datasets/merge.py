@@ -1,12 +1,16 @@
 """Merge the deduped interim datasets into one table in the unified schema (W2-P1-01).
 
-Only files that exist are merged; missing ones are skipped. Every existing file is
-checked against `schema.validate` before it is used, and the `source` column of each
-row is kept exactly as the loader wrote it.
+Generic: every `*_deduped.parquet` file found in the interim directory is merged, so a new
+dataset only needs its loader + dedupe step, never an edit here. Every file is checked
+against `schema.validate` before it is used, and the `source` column of each row is kept
+exactly as the loader wrote it.
+
+Run:  python -m shield_core.datasets.merge [--interim-dir DIR] [--output FILE] [--only NAME ...]
 """
 
 from __future__ import annotations
 
+import argparse
 import hashlib
 from pathlib import Path
 
@@ -21,18 +25,16 @@ except ImportError:  # run as a plain script
 REPO_ROOT = Path(__file__).resolve().parents[2]
 INTERIM_DIR = REPO_ROOT / "data" / "interim"
 MERGED_NAME = "merged_datasets.parquet"
-
-# Expected deduped files (whichever exist are used).
-DATASET_FILES = [
-    "bigvul_deduped.parquet",
-    "megavul_deduped.parquet",
-    "zenodo_python_deduped_fixed.parquet",
-    "cvefixes_python_deduped_fixed.parquet",
-]
+DEDUPED_GLOB = "*_deduped.parquet"  # what dedupe.py writes, one file per dataset
 
 
 class DatasetSchemaError(ValueError):
     """An existing dataset file does not follow the unified schema."""
+
+
+def discover_datasets(interim_dir: Path = INTERIM_DIR) -> list[str]:
+    """Names of all deduped files in `interim_dir`, sorted so the merge is deterministic."""
+    return sorted(p.name for p in Path(interim_dir).glob(DEDUPED_GLOB) if p.name != MERGED_NAME)
 
 
 def file_sha256(path: Path) -> str:
@@ -62,32 +64,39 @@ def load_dataset(path: Path) -> pd.DataFrame:
 
 def merge_datasets(
     interim_dir: Path = INTERIM_DIR,
-    filenames: list[str] = DATASET_FILES,
+    filenames: list[str] | None = None,
     verbose: bool = True,
 ) -> tuple[pd.DataFrame, list[dict]]:
-    """Return (merged DataFrame, per-file info). Raises FileNotFoundError if nothing exists."""
+    """Return (merged DataFrame, per-file info).
+
+    `filenames=None` (default) merges every `*_deduped.parquet` in `interim_dir`.
+    Raises FileNotFoundError if nothing is found, DatasetSchemaError on a bad file or when
+    the same `source` value appears in two files (that would mean a stale/duplicate file).
+    """
     interim_dir = Path(interim_dir)
-    frames, inputs = [], []
-    for name in filenames:
+    names = discover_datasets(interim_dir) if filenames is None else list(filenames)
+    frames, inputs, seen_sources = [], [], {}
+    for name in names:
         path = interim_dir / name
         if not path.exists():
-            if verbose:
-                print(f"  skip (not found): {name}")
-            continue
+            raise FileNotFoundError(f"requested dataset not found: {path}")
         df = load_dataset(path)
+        sources = sorted(df["source"].unique().tolist())
+        for s in sources:
+            if s in seen_sources:
+                raise DatasetSchemaError(
+                    f"source '{s}' appears in both {seen_sources[s]} and {name}; "
+                    "remove the stale file"
+                )
+            seen_sources[s] = name
         frames.append(df)
         inputs.append(
-            {
-                "file": name,
-                "rows": int(len(df)),
-                "sha256": file_sha256(path),
-                "sources": sorted(df["source"].unique().tolist()),
-            }
+            {"file": name, "rows": int(len(df)), "sha256": file_sha256(path), "sources": sources}
         )
         if verbose:
-            print(f"  loaded: {name} ({len(df):,} rows)")
+            print(f"  loaded: {name} ({len(df):,} rows, sources={sources})")
     if not frames:
-        raise FileNotFoundError(f"none of {filenames} found in {interim_dir}")
+        raise FileNotFoundError(f"no '{DEDUPED_GLOB}' files found in {interim_dir}")
     merged = pd.concat(frames, ignore_index=True)[schema.COLUMNS].astype(schema.DTYPES)
     return merged, inputs
 
@@ -104,27 +113,16 @@ def count_cross_source_duplicates(df: pd.DataFrame) -> int:
     return int((pd.DataFrame({"k": key, "s": df["source"]}).groupby("k")["s"].nunique() > 1).sum())
 
 
-def remove_cross_source_duplicates(df: pd.DataFrame) -> pd.DataFrame:
-    """Remove code duplicates across sources, keeping the first occurrence."""
-    normalized_code = df["code"].astype("string").str.replace(r"\s+", "", regex=True)
-
-    duplicated = normalized_code.duplicated(keep="first")
-    removed = int(duplicated.sum())
-
-    if removed:
-        print(f"  Removed {removed:,} cross-source duplicate rows")
-
-    return df.loc[~duplicated].reset_index(drop=True)
-
-
 def merge_deduped_datasets(
-    interim_dir: Path = INTERIM_DIR, output_path: Path | None = None
+    interim_dir: Path = INTERIM_DIR,
+    output_path: Path | None = None,
+    filenames: list[str] | None = None,
 ) -> pd.DataFrame | None:
-    """Merge available deduped datasets and write `merged_datasets.parquet`."""
+    """Merge the deduped datasets and write `merged_datasets.parquet`."""
     interim_dir = Path(interim_dir)
-    print(f"Searching for deduped datasets in {interim_dir} ...")
+    print(f"Searching for '{DEDUPED_GLOB}' in {interim_dir} ...")
     try:
-        merged, _ = merge_datasets(interim_dir)
+        merged, _ = merge_datasets(interim_dir, filenames)
     except FileNotFoundError as exc:
         print(f"Error: {exc}")
         return None
@@ -137,5 +135,19 @@ def merge_deduped_datasets(
     return merged
 
 
+def main(argv: list[str] | None = None) -> None:
+    p = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    p.add_argument("--interim-dir", type=Path, default=INTERIM_DIR)
+    p.add_argument("--output", type=Path, default=None)
+    p.add_argument(
+        "--only",
+        nargs="+",
+        metavar="FILE",
+        help="merge only these file names (default: every *_deduped.parquet)",
+    )
+    a = p.parse_args(argv)
+    merge_deduped_datasets(a.interim_dir, a.output, a.only)
+
+
 if __name__ == "__main__":
-    merge_deduped_datasets()
+    main()

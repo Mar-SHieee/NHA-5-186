@@ -1,11 +1,15 @@
-"""SHIELD language-aware, provenance-conscious parquet deduplication.
+"""SHIELD parquet deduplication.
 
-Run from repository root:
-    python -m shield_core.datasets.dedupe
+Run from the repository root:  python -m shield_core.datasets.dedupe
 
-Reads every non-sample, non-deduped parquet in data/interim, writes a
-<dataset>_deduped.parquet for EACH input (including empty results), and
-writes docs/dedupe_report.md. Input parquet files are never modified.
+Reads every unified-schema parquet in data/interim, writes <dataset>_deduped.parquet for each
+and docs/dedupe_report.md. Inputs are never modified.
+
+Rows are the same code when they share a token-based key (Python keeps NEWLINE/INDENT/DEDENT).
+Two extra links catch copies the strict key misses:
+  * layout-insensitive Python keys, for sources without line breaks (Zenodo);
+  * the same text recorded under different languages (loader mislabel).
+Labels, CWEs and CVEs are resolved per cluster; 0/1 conflicts are dropped from every dataset.
 """
 
 from __future__ import annotations
@@ -20,15 +24,24 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Protocol
 
+import numpy as np
 import pandas as pd
+import pyarrow.parquet as pq
 
 from languages import registry
 from languages.registry import LanguageSpec
+from shield_core.datasets import schema
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
-PRIORITY_ORDER = ("megavul", "bigvul")
+PRIORITY_ORDER = (
+    "megavul",
+    "bigvul",
+    "cvefixes_cpp",
+    "cvefixes_python",
+    "zenodo_python",
+)
 EXCLUDED_NAME_PARTS = ("sample", "deduped")
-METADATA_COLUMNS = ("project", "commit", "fixed_code")
+METADATA_COLUMNS = ("project", "commit", "fixed_code", "date", "cve")
 REQUIRED_COLUMNS = ("code", "language", "label", "cwe")
 REPORT_HEADERS = (
     "dataset",
@@ -40,6 +53,8 @@ REPORT_HEADERS = (
     "cross dups",
     "final",
 )
+_WHITESPACE = re.compile(r"\s+")
+_TEMP_COLUMNS = ["_layout_key", "_squash_key", "_flat", "_xkey"]
 
 
 class Normalizer(Protocol):
@@ -89,8 +104,38 @@ class PythonTokenNormalizer:
             return code.replace("\r\n", "\n")
 
 
-# Token-aware C-family normalizer: comments are discarded; quoted strings and
-# character literals remain intact; tokens are separated in the hash encoding.
+class PythonLayoutlessNormalizer:
+    """Python tokens without comments and without any line/indent structure.
+
+    Returns "" when the code cannot be tokenized (no layout-insensitive key is then made).
+    """
+
+    _SKIP = frozenset(
+        {
+            tokenize.COMMENT,
+            tokenize.NL,
+            tokenize.NEWLINE,
+            tokenize.INDENT,
+            tokenize.DEDENT,
+            tokenize.ENCODING,
+            tokenize.ENDMARKER,
+        }
+    )
+
+    def normalize(self, code: str) -> str:
+        try:
+            parts = []
+            for token in tokenize.generate_tokens(io.StringIO(code).readline):
+                if token.type in self._SKIP:
+                    continue
+                if token.type == tokenize.ERRORTOKEN and token.string.strip():
+                    return ""
+                parts.append([tokenize.tok_name[token.type], token.string])
+            return json.dumps(parts, ensure_ascii=False, separators=(",", ":"))
+        except (tokenize.TokenError, IndentationError, SyntaxError, UnicodeError):
+            return ""
+
+
 _C_LEX = re.compile(
     r"(?P<comment>//[^\n]*|/\*[\s\S]*?\*/)|"
     r'(?P<string>(?:u8|u|U|L)?"(?:\\[\s\S]|[^"\\])*"|(?:u8|u|U|L)?\'(?:\\[\s\S]|[^\'\\])*\')|'
@@ -137,7 +182,13 @@ class DedupeReport:
     stats: dict[str, DatasetStats] = field(default_factory=dict)
     overlaps: dict[tuple[str, str], int] = field(default_factory=dict)
     conflict_groups: int = 0
+    conflict_cross_dataset: int = 0
     merged_cwe_groups: int = 0
+    merged_cve_groups: int = 0
+    layout_merges: int = 0
+    layout_rows_linked: int = 0
+    cross_language_merges: int = 0
+    cross_language_rows_linked: int = 0
 
 
 def _cwes(value: object) -> list[str]:
@@ -167,6 +218,19 @@ def _cwes(value: object) -> list[str]:
     return [str(value)]
 
 
+def _present(value: object) -> bool:
+    """True when a metadata cell carries information (empty list / blank string = missing)."""
+    if value is None or value is pd.NA:
+        return False
+    if isinstance(value, (list, tuple, set, np.ndarray)):
+        return len(value) > 0
+    if isinstance(value, str):
+        return bool(value.strip())
+    if isinstance(value, float):
+        return not np.isnan(value)
+    return True
+
+
 class DedupeEngine:
     def __init__(
         self,
@@ -175,28 +239,51 @@ class DedupeEngine:
         hasher: Hasher,
         metadata_columns: tuple[str, ...],
         languages: frozenset[str] | None = None,
+        layoutless: dict[str, Normalizer] | None = None,
     ):
         self._normalizers = normalizers
         self._fallback = fallback
         self._hasher = hasher
         self._metadata_columns = metadata_columns
         self._languages = languages
+        self._layoutless = layoutless or {}
 
     def _with_hash(self, name: str, df: pd.DataFrame) -> pd.DataFrame:
         missing = set(REQUIRED_COLUMNS) - set(df.columns)
         if missing:
             raise ValueError(f"{name}: missing unified schema columns: {sorted(missing)}")
         df = df.copy()
-        keys = []
+        strict, layout_keys, squash_keys, flat, xkeys = [], [], [], [], []
         for code, language in zip(df["code"], df["language"], strict=True):
             if not isinstance(code, str) or not code.strip():
-                keys.append("")
+                strict.append("")
+                layout_keys.append("")
+                squash_keys.append("")
+                flat.append(False)
+                xkeys.append("")
                 continue
             lang = str(language)
             normalized = self._normalizers.get(lang, self._fallback).normalize(code)
-            # Include language in key so Python/C++ cannot collide.
-            keys.append(self._hasher.hash(lang + "\0" + normalized) if normalized else "")
-        df["code_hash"] = keys
+            xkeys.append(self._hasher.hash("xlang\0" + _WHITESPACE.sub("", code)))
+            strict.append(self._hasher.hash(lang + "\0" + normalized) if normalized else "")
+
+            layoutless = self._layoutless.get(lang)
+            if layoutless is None:
+                layout_keys.append("")
+                squash_keys.append("")
+                flat.append(False)
+                continue
+            text = layoutless.normalize(code)
+            layout_keys.append(self._hasher.hash("layout\0" + lang + "\0" + text) if text else "")
+            squash_keys.append(
+                self._hasher.hash("squash\0" + lang + "\0" + _WHITESPACE.sub("", code))
+            )
+            flat.append("\n" not in code.replace("\r\n", "\n").strip())
+        df["code_hash"] = strict
+        df["_layout_key"] = layout_keys
+        df["_squash_key"] = squash_keys
+        df["_flat"] = flat
+        df["_xkey"] = xkeys
         return df
 
     def _filter_language(self, name: str, df: pd.DataFrame, report: DedupeReport) -> pd.DataFrame:
@@ -206,8 +293,93 @@ class DedupeEngine:
         report.stats[name].filtered = int((~mask).sum())
         dropped = df.loc[~mask, "language"].fillna("<NA>").value_counts()
         report.stats[name].filtered_languages = {str(k): int(v) for k, v in dropped.items()}
-        # Empty output is legitimate when a dataset contains only disabled languages.
         return df.loc[mask].copy()
+
+    def _link_cross_language(self, frames: dict[str, pd.DataFrame], report: DedupeReport) -> None:
+        """Link identical text recorded under different languages (one strict hash per language)."""
+        groups: dict[str, dict[str, set[str]]] = {}
+        for df in frames.values():
+            if df.empty:
+                continue
+            for xkey, strict, lang in zip(
+                df["_xkey"], df["code_hash"], df["language"].astype(str), strict=True
+            ):
+                if xkey:
+                    groups.setdefault(xkey, {}).setdefault(lang, set()).add(strict)
+        parent: dict[str, str] = {}
+
+        def find(x: str) -> str:
+            while parent.get(x, x) != x:
+                parent[x] = parent.get(parent[x], parent[x])
+                x = parent[x]
+            return x
+
+        for by_lang in groups.values():
+            if len(by_lang) < 2 or any(len(v) != 1 for v in by_lang.values()):
+                continue
+            hashes = sorted(next(iter(v)) for v in by_lang.values())
+            for other in hashes[1:]:
+                ra, rb = find(hashes[0]), find(other)
+                if ra != rb:
+                    parent[max(ra, rb)] = min(ra, rb)
+                    report.cross_language_merges += 1
+        if not parent:
+            return
+        for name, df in frames.items():
+            if df.empty:
+                continue
+            linked = df["code_hash"].map(find)
+            report.cross_language_rows_linked += int((linked != df["code_hash"]).sum())
+            frames[name] = df.assign(code_hash=linked)
+
+    def _link_layout_variants(self, frames: dict[str, pd.DataFrame], report: DedupeReport) -> None:
+        """Link flattened rows to their single laid-out copy."""
+        flat_keys: dict[str, set[str]] = {}
+        laid_out_keys: dict[str, set[str]] = {}
+        for df in frames.values():
+            if df.empty:
+                continue
+            for strict, layout, squash, is_flat in zip(
+                df["code_hash"],
+                df["_layout_key"],
+                df["_squash_key"],
+                df["_flat"],
+                strict=True,
+            ):
+                for key in (layout, squash):
+                    if key:
+                        target = flat_keys if is_flat else laid_out_keys
+                        target.setdefault(key, set()).add(strict)
+
+        parent: dict[str, str] = {}
+
+        def find(x: str) -> str:
+            while parent.get(x, x) != x:
+                parent[x] = parent.get(parent[x], parent[x])
+                x = parent[x]
+            return x
+
+        def union(a: str, b: str) -> None:
+            ra, rb = find(a), find(b)
+            if ra != rb:
+                low, high = sorted((ra, rb))
+                parent[high] = low
+                report.layout_merges += 1
+
+        for key, flat_members in flat_keys.items():
+            members = sorted(flat_members)
+            for other in members[1:]:
+                union(members[0], other)
+            laid_out = laid_out_keys.get(key, set())
+            if len(laid_out) == 1:
+                union(members[0], next(iter(laid_out)))
+
+        for name, df in frames.items():
+            if not df.empty and parent:
+                linked = df["code_hash"].map(find)
+                report.layout_rows_linked += int((linked != df["code_hash"]).sum())
+                df = df.assign(code_hash=linked)
+            frames[name] = df.drop(columns=_TEMP_COLUMNS)
 
     def run(
         self, datasets: dict[str, pd.DataFrame]
@@ -223,34 +395,42 @@ class DedupeEngine:
             report.stats[name].empty = int(empty.sum())
             frames[name] = df.loc[~empty].copy()
 
-        # Detect binary-label conflicts across ALL input datasets, not just within each.
+        self._link_cross_language(frames, report)
+        self._link_layout_variants(frames, report)
+
         label_sets: dict[str, set[int]] = {}
-        for df in frames.values():
+        key_datasets: dict[str, set[str]] = {}
+        for name, df in frames.items():
             if df.empty:
                 continue
             for key, labels in df.groupby("code_hash", sort=False)["label"]:
                 label_sets.setdefault(key, set()).update(int(x) for x in labels.dropna().unique())
+                key_datasets.setdefault(key, set()).add(name)
         conflicting = {key for key, labels in label_sets.items() if len(labels) > 1}
         report.conflict_groups = len(conflicting)
+        report.conflict_cross_dataset = sum(len(key_datasets[k]) > 1 for k in conflicting)
         for name, df in frames.items():
             conflict = df["code_hash"].isin(conflicting)
             report.stats[name].conflicts = int(conflict.sum())
             frames[name] = df.loc[~conflict].copy()
 
-        # CWE labels are accumulated across duplicates before any row is dropped.
-        # Preserve original eight-column schema: CWE stays list-like.
         all_cwes: dict[str, set[str]] = {}
+        all_cves: dict[str, set[str]] = {}
         for df in frames.values():
-            for key, value in zip(df["code_hash"], df["cwe"], strict=True):
-                all_cwes.setdefault(key, set()).update(_cwes(value))
+            for key, cwe in zip(df["code_hash"], df["cwe"], strict=True):
+                all_cwes.setdefault(key, set()).update(_cwes(cwe))
+            if "cve" in df.columns:
+                for key, cve in zip(df["code_hash"], df["cve"], strict=True):
+                    all_cves.setdefault(key, set()).update(schema.normalize_cve(cve))
         report.merged_cwe_groups = sum(len(labels) > 1 for labels in all_cwes.values())
+        report.merged_cve_groups = sum(len(ids) > 1 for ids in all_cves.values())
 
         for name, df in frames.items():
             if df.empty:
                 continue
             columns = [c for c in self._metadata_columns if c in df.columns]
             if columns:
-                filled = df[columns].notna().sum(axis=1)
+                filled = sum(df[c].map(_present).astype(int) for c in columns)
                 df = df.assign(_filled=filled).sort_values(
                     "_filled", ascending=False, kind="stable"
                 )
@@ -273,12 +453,20 @@ class DedupeEngine:
             unique = df.loc[~duplicate].copy()
             seen.update(unique["code_hash"])
             if len(unique):
-                # Assign object arrays explicitly, compatible with Parquet and schema.conform.
                 unique["cwe"] = pd.Series(
                     [sorted(all_cwes[key]) for key in unique["code_hash"]],
                     index=unique.index,
                     dtype="object",
                 )
+                if "cve" in unique.columns:
+                    unique["cve"] = pd.Series(
+                        [
+                            schema.normalize_cve(sorted(all_cves[key]))
+                            for key in unique["code_hash"]
+                        ],
+                        index=unique.index,
+                        dtype="object",
+                    )
             report.stats[name].final = len(unique)
             output[name] = unique.drop(columns="code_hash").reset_index(drop=True)
         return output, report
@@ -296,23 +484,34 @@ class ParquetRepository:
         return (self._priority.index(name) if name in self._priority else len(self._priority), name)
 
     def _discover(self) -> list[str]:
-        # Restrict deduplication to MegaVul and Big-Vul.
-        allowed = {"megavul", "bigvul"}
+        allowed = set(self._priority)
         names = [p.stem for p in self._directory.glob("*.parquet") if p.stem.lower() in allowed]
         if not names:
             raise FileNotFoundError(
-                f"No megavul or bigvul parquet files found in {self._directory}"
+                f"No supported dataset parquet files found in {self._directory}"
             )
         return sorted(names, key=self._rank)
 
     def load(self) -> dict[str, pd.DataFrame]:
-        return {
-            name: pd.read_parquet(self._directory / f"{name}.parquet") for name in self._discover()
-        }
+        result = {}
+        for name in self._discover():
+            path = self._directory / f"{name}.parquet"
+            columns = pq.read_schema(path).names
+            if columns != schema.COLUMNS:
+                raise ValueError(
+                    f"{name}: expected schema {schema.SCHEMA_VERSION} columns "
+                    f"{schema.COLUMNS}, got {columns}"
+                )
+            result[name] = schema.from_parquet(path)
+        return result
 
     def save(self, name: str, df: pd.DataFrame) -> None:
         path = self._directory / f"{name}_deduped.parquet"
-        df.reset_index(drop=True).to_parquet(path, compression="zstd", index=False)
+        df = df.reset_index(drop=True)[schema.COLUMNS]
+        issues = schema.validate(df)
+        if issues:
+            raise ValueError(f"{name} deduped validation failed: {issues}")
+        schema.to_parquet(df, path)  # stable Arrow schema, also for empty / all-empty-list data
 
 
 class MarkdownReportWriter:
@@ -334,8 +533,19 @@ class MarkdownReportWriter:
         lines.extend(
             [
                 "",
-                f"Conflicting code-hash groups (0 vs 1): {report.conflict_groups:,}",
+                f"Conflicting code-hash groups (0 vs 1): {report.conflict_groups:,} "
+                f"(across datasets: {report.conflict_cross_dataset:,}, "
+                f"inside one dataset: {report.conflict_groups - report.conflict_cross_dataset:,})",
                 f"Code-hash groups with multiple CWE labels: {report.merged_cwe_groups:,}",
+                f"Code-hash groups with multiple CVE ids: {report.merged_cve_groups:,}",
+                "",
+                "Layout-insensitive Python matching (sources without line breaks, e.g. Zenodo): "
+                f"{report.layout_merges:,} key merges, "
+                f"{report.layout_rows_linked:,} rows linked to another copy.",
+                "",
+                "Same code recorded under different languages (loader mislabel): "
+                f"{report.cross_language_merges:,} key merges, "
+                f"{report.cross_language_rows_linked:,} rows linked to another copy.",
                 "",
                 "## Languages excluded by registry",
                 "",
@@ -366,7 +576,7 @@ class MarkdownReportWriter:
                     "across datasets; source priority determines owner."
                 ),
                 (
-                    "- Same-code CWE labels are unioned into the retained "
+                    "- Same-code CWE and CVE labels are unioned into the retained "
                     "row (multi-label); provenance of other rows is not retained."
                 ),
                 (
@@ -378,10 +588,20 @@ class MarkdownReportWriter:
                     "C-family languages, conservative for unknown languages."
                 ),
                 (
+                    "- Python code without line breaks is matched to its laid-out copy by "
+                    "layout-insensitive keys; two laid-out versions are never merged this way."
+                ),
+                (
                     "- No CVE/commit/project grouping or semantic clone "
                     "detection is performed; use group-aware splitting later."
                 ),
                 "- All original input parquet files remain unchanged.",
+                "- project/commit/date metadata come from the selected representative row;",
+                "  deduplication does not preserve every provenance relation.",
+                (
+                    "- Keep the *_commit_cve_mapping.parquet files "
+                    "(CVEfixes, Big-Vul, MegaVul, Zenodo) separately for splitting."
+                ),
             ]
         )
         self._path.parent.mkdir(parents=True, exist_ok=True)
@@ -428,6 +648,12 @@ def build_normalizers(specs: list[LanguageSpec]) -> dict[str, Normalizer]:
     return normalizers
 
 
+def build_layoutless_normalizers(specs: list[LanguageSpec]) -> dict[str, Normalizer]:
+    """Layout-insensitive keys only make sense for indentation-sensitive languages (Python)."""
+    layoutless = PythonLayoutlessNormalizer()
+    return {spec.name: layoutless for spec in specs if ".py" in spec.extensions}
+
+
 def build_default_runner(languages: frozenset[str] | None = None) -> DedupeRunner:
     selected = languages if languages is not None else frozenset(registry.enabled_languages())
     return DedupeRunner(
@@ -440,6 +666,7 @@ def build_default_runner(languages: frozenset[str] | None = None) -> DedupeRunne
             hasher=Sha256Hasher(),
             metadata_columns=METADATA_COLUMNS,
             languages=selected,
+            layoutless=build_layoutless_normalizers(registry.all_languages()),
         ),
         report_writer=MarkdownReportWriter(PROJECT_ROOT / "docs" / "dedupe_report.md"),
     )

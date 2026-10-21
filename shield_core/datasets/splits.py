@@ -1,7 +1,7 @@
 """Project-disjoint, group-aware split: train / val / test / holdout (W2-P1-01, manifest v0.2).
 
 Pipeline
-  1. merge the available deduped datasets (merge.py)
+  1. read merged_datasets.parquet (run merge.py first)
   2. optional D39: add patched Python code as label-0 rows (off by default, unchanged)
   3. canonicalize project names (project_normalization.py), then build connected components:
      rows are linked through their (canonical) project AND their commit, so every project
@@ -59,11 +59,10 @@ _MISSING = {"", "nan", "none", "null", "na", "n/a", "unknown", "<na>"}
 
 LIMITATIONS = [
     (
-        "Project names are canonicalized only by "
-        "project_normalization.normalize_project_name "
-        "(lower-case, whitespace/slash cleanup, verified aliases); "
-        "unverified aliases, URL forms and '.git' suffixes are not "
-        "reconciled (see project_name_variants_suspected). "
+        "Project names are canonicalized by project_normalization.normalize_project_name "
+        "(syntactic cleanup, manual overrides, aliases learned from shared commits and "
+        "unique bare names in docs/project_aliases.json). Aliases without such evidence "
+        "are not reconciled (see project_name_variants_suspected). "
         "Abbreviated commit hashes are not matched to full ones."
     )
 ]
@@ -616,7 +615,9 @@ def build_splits(
     print(f"Loading merged dataset: {merged_path}")
 
     df = schema.from_parquet(merged_path)
-    schema.validate(df)
+    problems = schema.validate(df)
+    if problems:
+        raise SplitValidationError(f"merged dataset breaks the schema: {'; '.join(problems[:5])}")
 
     n_merged = len(df)
     inputs = [
@@ -626,6 +627,18 @@ def build_splits(
             "rows": n_merged,
         }
     ]
+
+    aliases_path = Path(manifest_path).parent / "project_aliases.json"
+    if aliases_path.exists():
+        inputs.append(
+            {
+                "file": aliases_path.name,
+                "sha256": hashlib.sha256(aliases_path.read_bytes()).hexdigest(),
+                "rows": len(json.loads(aliases_path.read_text(encoding="utf-8"))["aliases"]),
+            }
+        )
+    else:
+        print("  WARNING: docs/project_aliases.json not found; run project_normalization first")
 
     cross_dups = merge.count_cross_source_duplicates(df)
 

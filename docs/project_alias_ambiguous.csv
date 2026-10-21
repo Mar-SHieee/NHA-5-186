@@ -1,0 +1,6 @@
+name,rows,candidates
+openssl,2451,openssl/openssl; ruby/openssl
+libtiff,569,gitlab.com/libtiff/libtiff; vadz/libtiff
+systemd,332,keszybz/systemd; systemd/systemd
+harfbuzz,152,behdad/harfbuzz; harfbuzz/harfbuzz
+util-linux,2,karelzak/util-linux; util-linux/util-linux

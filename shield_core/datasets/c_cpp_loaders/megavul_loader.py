@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from collections import Counter
 from itertools import islice
 from pathlib import Path, PurePosixPath
@@ -11,6 +12,7 @@ import pandas as pd
 import pyarrow as pa
 import pyarrow.parquet as pq
 
+from shield_core.datasets.project_names import project_from_repo_url
 from shield_core.datasets.schema import arrow_schema, conform, validate
 
 
@@ -35,6 +37,9 @@ PROJECT_ROOT = Path(__file__).resolve().parents[3]
 SOURCE = "megavul"
 DEFAULT_PATH = PROJECT_ROOT / "data" / "raw" / "megavul.json"
 DEFAULT_OUT = PROJECT_ROOT / "data" / "interim" / "megavul.parquet"
+MAPPING_SUFFIX = (
+    "_commit_cve_mapping.parquet"  # megavul.parquet -> megavul_commit_cve_mapping.parquet
+)
 HF_DATASET_KAGGLE = "marcdamie/megavul-a-cc-java-vulnerability-dataset"  # [cite: 2]
 
 # Language is not a MegaVul field; it is derived from the extension of file_path.
@@ -99,6 +104,17 @@ def _iter_records(path: Path):
             yield from ijson.items(f, "", multiple_values=True)
 
 
+def _project(rec: dict) -> object:
+    """`owner/repo` from the record's `git_url`; falls back to `repo_name` as written.
+
+    `git_url` may be a commit URL, so only GitHub URLs are used (their first two path
+    segments are always owner/repo). Other hosts would give "host/.../commit/<sha>", which
+    is not a project name, so they fall back to `repo_name`.
+    """
+    name = project_from_repo_url(rec.get("git_url"), github_only=True)
+    return rec.get("repo_name") if pd.isna(name) else name
+
+
 def _to_row(rec: dict) -> dict | None:
     """Map one MegaVul record to schema columns. Returns None if language is unknown."""
     language = _language(rec.get("file_path"))
@@ -113,7 +129,7 @@ def _to_row(rec: dict) -> dict | None:
         "language": language,
         "label": int(is_vul),
         "cwe": cwe_ids if cwe_ids else None,
-        "project": rec.get("repo_name"),
+        "project": _project(rec),
         "commit": rec.get("commit_hash"),
         "date": rec.get("publish_date"),  # MegaVul has no `date` field
         "cve": rec.get("cve_id"),
@@ -121,14 +137,75 @@ def _to_row(rec: dict) -> dict | None:
     }
 
 
-def _stream_rows(path: Path, limit: int | None, stats: Counter):
-    """Yield mapped rows one by one, counting skipped and multi-CWE records."""
+_CVE_PATTERN = re.compile(r"CVE-\d{4}-\d{4,}", re.IGNORECASE)
+
+
+def _add_commit_cve_pairs(rec: dict, pairs: set[tuple[str, str]]) -> None:
+    """Add this record's (commit, CVE) links to `pairs`.
+
+    Uses every record, including the ones skipped later for an unknown language, so the
+    mapping keeps the complete relation. CVE ids are extracted with a regex instead of
+    assuming the field holds exactly one id.
+    """
+    commit_value, cve_value = rec.get("commit_hash"), rec.get("cve_id")
+    if commit_value is None or cve_value is None:
+        return
+    commit = str(commit_value).strip()
+    if not commit:
+        return
+    for cve in _CVE_PATTERN.findall(str(cve_value).upper()):
+        pairs.add((commit, cve))
+
+
+def save_commit_cve_mapping(pairs: set[tuple[str, str]], path: Path) -> int:
+    """Write distinct commit-CVE associations, separately from the code samples.
+
+    One row per distinct pair (columns `commit`, `cve`). It does not claim that every CVE
+    associated with a commit affects every changed function.
+    """
+    path = Path(path)
+    mapping = pd.DataFrame(sorted(pairs), columns=["commit", "cve"])
+    mapping = mapping.astype({"commit": "string", "cve": "string"})
+
+    tmp_path = path.with_name(path.stem + ".tmp.parquet")
+    tmp_path.unlink(missing_ok=True)
+    try:
+        mapping.to_parquet(tmp_path, index=False, compression="zstd")
+        # Check the temporary file before replacing any previous mapping.
+        check = pq.ParquetFile(tmp_path)
+        try:
+            if check.schema_arrow.names != ["commit", "cve"]:
+                raise RuntimeError("Commit-CVE mapping has an unexpected schema.")
+            if check.metadata.num_rows != len(mapping):
+                raise RuntimeError("Commit-CVE mapping row count verification failed.")
+        finally:
+            check.close()
+        tmp_path.replace(path)
+    except Exception:
+        tmp_path.unlink(missing_ok=True)
+        raise
+    return len(mapping)
+
+
+def _stream_rows(
+    path: Path,
+    limit: int | None,
+    stats: Counter,
+    pairs: set[tuple[str, str]] | None = None,
+):
+    """Yield mapped rows one by one, counting skipped and multi-CWE records.
+
+    If `pairs` is given, every record's (commit, CVE) links are collected into it.
+    """
     records = _iter_records(path)
 
     if limit is not None:
         records = islice(records, limit)
 
     for rec in records:
+        if pairs is not None:
+            _add_commit_cve_pairs(rec, pairs)
+
         row = _to_row(rec)
 
         if row is None:
@@ -178,14 +255,23 @@ def megavul_to_parquet(
     out_path: str | Path = DEFAULT_OUT,
     chunk_size: int = 20_000,
     limit: int | None = None,
+    mapping_path: str | Path | None = None,
 ) -> dict:
-    """Stream MegaVul -> unified schema -> parquet."""
+    """Stream MegaVul -> unified schema -> parquet, plus a commit-CVE mapping parquet.
+
+    The mapping goes next to `out_path` as `<name>_commit_cve_mapping.parquet` unless
+    `mapping_path` is given. With `limit`, both files only cover the first `limit` records.
+    """
     path = Path(path)
     if not path.exists():
         download_raw()
 
     out_path = Path(out_path)
     out_path.parent.mkdir(parents=True, exist_ok=True)
+    mapping_path = (
+        Path(mapping_path) if mapping_path else out_path.with_name(out_path.stem + MAPPING_SUFFIX)
+    )
+    pairs: set[tuple[str, str]] = set()
 
     tmp_path = out_path.with_name(out_path.name + ".tmp")
 
@@ -202,7 +288,7 @@ def megavul_to_parquet(
     schema = arrow_schema()
 
     try:
-        rows = _stream_rows(path, limit, stats)
+        rows = _stream_rows(path, limit, stats, pairs)
 
         for i, chunk in enumerate(batched(rows, chunk_size)):
             df = conform(pd.DataFrame(chunk), SOURCE)
@@ -262,8 +348,10 @@ def megavul_to_parquet(
 
     summary = dict(stats)
     summary["projects"] = len(projects)
+    summary["commit_cve_links"] = save_commit_cve_mapping(pairs, mapping_path)
 
     print(f"\n[megavul] wrote {out_path}")
+    print(f"[megavul] wrote {mapping_path} ({summary['commit_cve_links']:,} commit-CVE links)")
     print(summary)
 
     print("\nby language (count, vulnerable):")
