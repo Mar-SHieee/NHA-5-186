@@ -32,14 +32,14 @@ CONFIG = {
     "manifest": "data/interim/dataset_manifest_v0.json",
     "splits_dir": "data/interim/splits",
     "language": "python",
-    "use_fixed_code_as_negatives": True,  # removes the Zenodo shortcut
-    "min_cwe_count": 20,  # rarer CWEs (or groups) -> "Other"
+    "use_fixed_code_as_negatives": True,
+    "min_cwe_count": 20,
     "cwe_grouping": False,
-    "model": "logreg",  # "xgboost" | "logreg" (comparison baseline)
-    "logreg_C": 1.0,  # smaller = stronger regularization                 # True = merge similar CWEs into the groups below
-    "features": "tfidf",  # "tfidf" | "embeddings" | "both" | "precomputed" | "tfidf+precomputed"
-    "only_rows_with_precomputed": False,  # True = same rows as "precomputed" (for a fair tfidf comparison)
-    "precomputed": [  # your ready window embeddings (row i of .npy = row i of .parquet)
+    "model": "logreg",
+    "logreg_C": 1.0,
+    "features": "tfidf",
+    "only_rows_with_precomputed": False,
+    "precomputed": [
         (
             "data/interim/cvefixes_python_deduped.parquet",
             "data/interim/cvefixes_python_deduped_embeddings.npy",
@@ -95,7 +95,22 @@ CWE_GROUPS = {
     "Info leak": [200, 201, 203, 209, 215, 312, 319, 359, 522, 532, 538],
     "Web request": [113, 444, 601, 918],
     "Resource/DoS": [400, 407, 409, 674, 770, 789, 834, 835, 1333],
-    "Crypto/Cert": [295, 310, 311, 320, 325, 326, 327, 330, 331, 335, 337, 338, 345, 347],
+    "Crypto/Cert": [
+        295,
+        310,
+        311,
+        320,
+        325,
+        326,
+        327,
+        330,
+        331,
+        335,
+        337,
+        338,
+        345,
+        347,
+    ],
     "Deserialization": [502],
     "Memory": [119, 120, 121, 122, 125, 131, 190, 191, 401, 415, 416, 476, 787],
     "Input validation": [20, 129, 707, 1284, 1287],
@@ -151,8 +166,8 @@ if USE_PRE:
         assert len(codes) == len(matrix), (
             f"{parquet_path} and {npy_path} have different row counts!"
         )
-        for code, vector in zip(codes, matrix):
-            if np.any(vector):  # zero vector = empty code, no embedding
+        for code, vector in zip(codes, matrix, strict=True):
+            if np.any(vector):
                 lookup[code_key(code)] = vector
 
     def keep_matched(df, split):
@@ -176,13 +191,13 @@ if USE_PRE:
 
 # ---------------- 2. Features (fit on train only) ----------------
 def codebert_embeddings(codes, split):
-    """Your window CodeBERT embeddings (mean of windows), saved per split so they run once."""
+    """Your window CodeBERT embeddings (mean of windows), saved per split."""
     key = hashlib.sha1("\n".join(codes).encode("utf-8", "ignore")).hexdigest()[:10]
     path = f"{CONFIG['embeddings_dir']}/{split}_{CONFIG['language']}_{key}.npy"
     if os.path.exists(path):
         return np.load(path)
 
-    sys.path.insert(0, os.getcwd())  # so the project's own packages can be imported
+    sys.path.insert(0, os.getcwd())
     from scripts.codebert_embeddings_analysis.long_embedding import process_dataset
     from shield_core.models.embedding.embedder import CodeBERTEmbedder
 
@@ -251,9 +266,9 @@ def make_model(multiclass=False):
 
 
 def fit_model(model, X, y, X_es, y_es):
-    weights = compute_sample_weight("balanced", y)  # class weights, no resampling
+    weights = compute_sample_weight("balanced", y)
     if CONFIG["model"] == "logreg":
-        return model.fit(X, y, sample_weight=weights)  # no early stopping needed
+        return model.fit(X, y, sample_weight=weights)
     return model.fit(X, y, sample_weight=weights, eval_set=[(X_es, y_es)], verbose=False)
 
 
@@ -279,12 +294,11 @@ print(
 print(
     f"Brier raw {brier_score_loss(y_test, p_test_raw):.4f} -> calibrated {binary_test['brier']:.4f}"
 )
-for src in test["source"].unique():  # shortcut check
+for src in test["source"].unique():
     m = (test["source"] == src).values
     if len(set(y_test[m])) > 1:
-        print(
-            f"  {src}: MCC {matthews_corrcoef(y_test[m], (p_test[m] >= threshold).astype(int)):.3f}"
-        )
+        mcc_val = matthews_corrcoef(y_test[m], (p_test[m] >= threshold).astype(int))
+        print(f"  {src}: MCC {mcc_val:.3f}")
 
 # Calibration plot data (CSV only)
 bins = np.clip((p_test * 10).astype(int), 0, 9)
@@ -292,7 +306,9 @@ calib = (
     pd.DataFrame({"bin": bins, "pred": p_test, "true": y_test})
     .groupby("bin")
     .agg(
-        count=("true", "size"), mean_predicted=("pred", "mean"), fraction_positive=("true", "mean")
+        count=("true", "size"),
+        mean_predicted=("pred", "mean"),
+        fraction_positive=("true", "mean"),
     )
 )
 calib.to_csv(f"{OUT}/calibration_plot_data.csv")
@@ -312,9 +328,12 @@ counts = c_train.value_counts()
 classes = sorted(c for c in counts[counts >= CONFIG["min_cwe_count"]].index if c != "Other") + [
     "Other"
 ]
-to_id = lambda s: (
-    s.where(s.isin(classes), "Other").map({c: i for i, c in enumerate(classes)}).values
-)
+
+
+def to_id(s):
+    return s.where(s.isin(classes), "Other").map({c: i for i, c in enumerate(classes)}).values
+
+
 yc_train, yc_val, yc_test = to_id(c_train), to_id(c_val), to_id(c_test)
 
 cwe = fit_model(make_model(multiclass=True), Xc_train, yc_train, Xc_val, yc_val)
@@ -332,23 +351,47 @@ print("CWE TEST:", {k: round(v, 4) for k, v in cwe_test.items()})
 # # ---------------- 5. Save V1 artifact + MLflow ----------------
 # binary.save_model(f"{OUT}/binary_model.json")
 # cwe.save_model(f"{OUT}/cwe_model.json")
-# joblib.dump({"vectorizer": vec, "calibrator": calibrator, "threshold": threshold, "cwe_classes": classes,
-#              "cwe_groups": CWE_GROUPS if CONFIG["cwe_grouping"] else None},
-#             f"{OUT}/preprocessing.joblib")
+# joblib.dump(
+#     {
+#         "vectorizer": vec,
+#         "calibrator": calibrator,
+#         "threshold": threshold,
+#         "cwe_classes": classes,
+#         "cwe_groups": CWE_GROUPS if CONFIG["cwe_grouping"] else None,
+#     },
+#     f"{OUT}/preprocessing.joblib",
+# )
 # with open(f"{OUT}/config.json", "w") as f:
 #     json.dump(CONFIG, f, indent=2)
 # with open(f"{OUT}/metrics.json", "w") as f:
-#     json.dump({"binary_test": binary_test, "threshold": threshold, "cwe_test": cwe_test}, f, indent=2, default=float)
+#     json.dump(
+#         {"binary_test": binary_test, "threshold": threshold, "cwe_test": cwe_test},
+#         f,
+#         indent=2,
+#         default=float,
+#     )
 
 # manifest = json.load(open(CONFIG["manifest"], encoding="utf-8"))
 # mlflow.set_tracking_uri("sqlite:///mlflow.db")
 # mlflow.set_experiment("W2-P3-01_xgboost")
 # with mlflow.start_run(run_name=os.path.basename(OUT)):
-#     mlflow.set_tags({"manifest_version": manifest.get("manifest_version"),
-#                      "dataset_hash": manifest.get("dataset_hash")})
-#     mlflow.log_params({"seed": SEED, "threshold": threshold, "language": CONFIG["language"],
-#                        "features": CONFIG["features"], "cwe_grouping": CONFIG["cwe_grouping"],
-#                        "fixed_code_negatives": CONFIG["use_fixed_code_as_negatives"], **CONFIG["xgb"]})
+#     mlflow.set_tags(
+#         {
+#             "manifest_version": manifest.get("manifest_version"),
+#             "dataset_hash": manifest.get("dataset_hash"),
+#         }
+#     )
+#     mlflow.log_params(
+#         {
+#             "seed": SEED,
+#             "threshold": threshold,
+#             "language": CONFIG["language"],
+#             "features": CONFIG["features"],
+#             "cwe_grouping": CONFIG["cwe_grouping"],
+#             "fixed_code_negatives": CONFIG["use_fixed_code_as_negatives"],
+#             **CONFIG["xgb"],
+#         }
+#     )
 #     mlflow.log_metrics({f"binary_{k}": float(v) for k, v in binary_test.items()})
 #     mlflow.log_metrics({f"cwe_{k}": float(v) for k, v in cwe_test.items()})
 #     mlflow.log_artifacts(OUT)
