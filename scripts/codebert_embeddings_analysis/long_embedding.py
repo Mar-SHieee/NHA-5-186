@@ -1,7 +1,8 @@
 """Embed every function in a dataset, splitting long ones into sliding windows.
 
 Run from the project root:
-
+    ex : python -m scripts.codebert_embeddings_analysis.long_embedding \
+        --data data/interim/splits/train.parquet
     python -m scripts.codebert_embeddings_analysis.long_embedding
     python -m scripts.codebert_embeddings_analysis.long_embedding --limit 200
     python -m scripts.codebert_embeddings_analysis.long_embedding \
