@@ -94,7 +94,7 @@ The benchmark's job is to **measure F and v**, then check how much batching, and
 | **D** (optional, time-box 30 min) | One JVM, Joern script with a loop of `importCode` | 1 | 1 per worker | Only if the Joern scripting API for exporting is clear. If not, record "not evaluated" and list it as future work |
 
 Batch sizes for C: **N ∈ {1, 10, 20, 50}** (N = 1 is C degenerate = B with one file, a consistency check).
-Workers: **1, 2, 4** (separate containers running in parallel; for A, 1/2/4 threads each calling the extractor).
+Workers: **1, 2, 4** (the machine has 24 logical CPUs, so add **8** as an optional extra if the memory peak per worker allows it) (separate containers running in parallel; for A, 1/2/4 threads each calling the extractor).
 `-Xmx` per worker: `4g` default; if 4 workers do not fit in RAM, rerun with `2g` and record it.
 
 ### 3.3 Experiments
@@ -180,12 +180,19 @@ Branch: `w2-p2-extraction-benchmark`. Commits and PR title start with `W2-P2-05:
 ## 5. STATE (update after every step)
 
 ```
-current_phase:      Phase 0
-last_ticked_step:   none
-in_progress:        nothing
-branch:             (not created yet)
-machine:            (fill in Phase 0: CPU cores, RAM, Docker limits, OS)
-key numbers so far: none
+current_phase:      Phase 0 (only 0.9 commit left)
+last_ticked_step:   0.8
+in_progress:        0.9 (git add + commit of this plan file)
+branch:             w2-p2-extraction-benchmark
+machine:            Windows, 24 logical CPUs, 16 GB RAM (16,907,100,160 B); Docker Desktop (WSL2, no .wslconfig = defaults) sees 24 CPUs and 8,188,317,696 B (~7.6 GiB)
+repo location:      C:\Users\eyada\OneDrive\Desktop\SHIELD  <-- INSIDE OneDrive (see R9: benchmark work dirs must be outside it)
+baseline:           ruff clean, 184 files formatted, pytest 697 passed + 1 skipped (151 s)
+docker image:       shield-joern:latest, id 51394b312f9a, 8.49 GB disk
+probes:             cgroup v2 works (/sys/fs/cgroup/memory.peak) -> peak_method = cgroup_v2; JAVA_OPTS reaches the container env (-Xmx512m printed);
+                    Joern's own banner says the frontend (pysrc2cpg / c2cpg) runs as a SEPARATE process with -J-Xmx4096m -> JAVA_OPTS may NOT cap it (to verify in Phase 5)
+docker floor:       `docker run --rm shield-joern true` = 0.762, 0.792, 0.740, 0.728, 0.796 s (median 0.762 s)
+data present:       *_samples_20 for bigvul, megavul, cvefixes_python (+cvefixes_cpp); *_deduped for bigvul, megavul, cvefixes_python, cvefixes_cpp
+key numbers so far: Docker start-up is only ~0.76 s of the old 5.85 s/sample -> most of F must be the JVM launches and Joern work (H1 needs refining)
 open questions:     none
 blockers:           none
 ```
@@ -198,14 +205,14 @@ Time estimates are honest ones: the team plan says 1.5 h, but a measured, reprod
 
 ### Phase 0: Setup and sanity (≈ 30 min)
 
-- [ ] 0.1 `git checkout main && git pull && git checkout -b w2-p2-extraction-benchmark`
-- [ ] 0.2 Environment works: `pip install -e ".[dev,data,ml]"`, `ruff check .`, `ruff format --check .`, `pytest -q` all green **before** any change (record the number of tests).
-- [ ] 0.3 Docker is running and the image exists: `docker image ls shield-joern`. If missing: `docker build -t shield-joern docker/joern` then `docker run --rm shield-joern /opt/smoke/run_smoke.sh` must end with `ALL SMOKE TESTS PASSED`.
-- [ ] 0.4 Data exists: `data/interim/{cvefixes_python,bigvul,megavul}_samples_20.parquet` (the spike samples) and `data/interim/{cvefixes_python,bigvul,megavul}_deduped.parquet`. If a file is missing, regenerate with the commands in README §3 ("rebuild the dataset") and the sample scripts in `shield_core/datasets/samples/`; write what you did in Section 9.
-- [ ] 0.5 Docker Desktop limits noted (Settings → Resources, or `docker info --format "{{.NCPU}} CPUs {{.MemTotal}} bytes"`). On Windows/WSL2 the limit lives in `%UserProfile%\.wslconfig` (`memory=`, `processors=`). Write the values into STATE.
-- [ ] 0.6 Probe cgroup memory counter: `docker run --rm shield-joern bash -c "cat /sys/fs/cgroup/memory.peak || cat /sys/fs/cgroup/memory/memory.max_usage_in_bytes"`. Record which works (decides `peak_method`).
-- [ ] 0.7 Probe that `JAVA_OPTS` is honoured: `docker run --rm -e JAVA_OPTS=-Xmx512m shield-joern bash -c "echo \$JAVA_OPTS && joern-parse --help | head -3"`. Record result.
-- [ ] 0.8 Probe the Docker cost floor: time `docker run --rm shield-joern true` five times (record each).
+- [x] 0.1 `git checkout main && git pull && git checkout -b w2-p2-extraction-benchmark`
+- [x] 0.2 Environment works: `pip install -e ".[dev,data,ml]"`, `ruff check .`, `ruff format --check .`, `pytest -q` all green **before** any change (record the number of tests).
+- [x] 0.3 Docker is running and the image exists: `docker image ls shield-joern`. If missing: `docker build -t shield-joern docker/joern` then `docker run --rm shield-joern /opt/smoke/run_smoke.sh` must end with `ALL SMOKE TESTS PASSED`.
+- [x] 0.4 Data exists: `data/interim/{cvefixes_python,bigvul,megavul}_samples_20.parquet` (the spike samples) and `data/interim/{cvefixes_python,bigvul,megavul}_deduped.parquet`. If a file is missing, regenerate with the commands in README §3 ("rebuild the dataset") and the sample scripts in `shield_core/datasets/samples/`; write what you did in Section 9.
+- [x] 0.5 Docker Desktop limits noted (Settings → Resources, or `docker info --format "{{.NCPU}} CPUs {{.MemTotal}} bytes"`). On Windows/WSL2 the limit lives in `%UserProfile%\.wslconfig` (`memory=`, `processors=`). Write the values into STATE.
+- [x] 0.6 Probe cgroup memory counter: `docker run --rm shield-joern bash -c "cat /sys/fs/cgroup/memory.peak || cat /sys/fs/cgroup/memory/memory.max_usage_in_bytes"`. Record which works (decides `peak_method`).
+- [x] 0.7 Probe that `JAVA_OPTS` is honoured: `docker run --rm -e JAVA_OPTS=-Xmx512m shield-joern bash -c "echo \$JAVA_OPTS && joern-parse --help | head -3"`. Record result.
+- [x] 0.8 Probe the Docker cost floor: time `docker run --rm shield-joern true` five times (record each).
 - [ ] 0.9 Commit this plan file into `docs/project/` (first commit: `W2-P2-05: add benchmark plan`).
 - **REVIEW GATE 0:** show the user the outputs of 0.3 to 0.8. Wait for OK.
 
@@ -308,6 +315,7 @@ Design notes the implementer must respect:
 - Variant A must call the **real** `JoernExtractor` (no re-implementation), no cache, `docker_image=<image>`, `timeout=<timeout>`; for group `c` pass `extension=".c"`, for `cpp` `".cpp"`, for `python` `".py"`, language from `BENCH_GROUPS`.
 - B/C: per-run timeout = `timeout + 10 * n_samples_in_run`. Kill with `docker rm -f <name>` on timeout. Mark all samples of that run as `timeout`.
 - Frontend name from the registry: `registry.require_enabled(lang).joern_frontend.lower()`.
+- **Work dir must be OUTSIDE OneDrive** (R9). Default `--work-dir` = `<system temp>/shield_bench` (e.g. `C:\Users\eyada\AppData\Local\Temp\shield_bench`); only the small CSV/JSON results go to `data/interim/joern_benchmark/`. `JoernExtractor` already uses the system temp dir. Add `--work-dir` to the CLI and print the chosen path.
 - Job dirs are `chmod 0o777` (container user is not root) under `BENCHMARK_DIR/work/<run_id>/<worker_k>/`; removed afterwards unless `--keep`.
 - Append one results row per run **immediately** after the run (so a crash loses at most one run). With `--resume`, skip configs whose `config_key` is already in `results.csv` (`rep >= 1`).
 - `--dry-run` prints the full run list with counts and a rough time estimate and runs **no** Docker command.
@@ -575,4 +583,6 @@ Tone: you are Eyad's professor. Precise, structured, **worked examples with real
 | R5 | Windows bind mounts are slow, so I/O is mixed into timings | state it in the report; optional follow-up `--stage-local` (copy inputs into the container) |
 | R6 | Row counts in documents disagree (455,236 vs 468,315) | projections read the real parquet and print the counts used |
 | R7 | Task overruns the 1.5 h estimate | Phase 5 is the Day-2 minimum; tell the team early; trade against W2-P2-03/-02 |
+| R9 | Repo lives inside OneDrive: bind-mounting OneDrive paths into Docker is slow, can hit online-only placeholders, and OneDrive syncing generated files adds I/O noise | Benchmark work dirs in the system temp dir (not OneDrive); optionally pause OneDrive sync during timed runs; note it in `environment.json` |
+| R10 | Docker has ~7.6 GiB for 24 CPUs; `-Xmx` may not cap Joern's separate frontend process | Measure real cgroup peak per worker in Phase 5 before trusting 4 workers; optional workers=8 only if peak x 8 fits; record `oom` rows |
 | R8 | Docker or the image changes mid-benchmark | record image id in `environment.json`; do not rebuild the image during the run |

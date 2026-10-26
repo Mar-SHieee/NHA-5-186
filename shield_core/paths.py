@@ -22,6 +22,7 @@ CACHE_DIR = DATA_DIR / "cache"  # embedding + commit-lookup caches
 GRAPH_CACHE_DIR = CACHE_DIR / "graphs"  # Joern graphs keyed by code hash + versions
 MODEL_ARTIFACTS_DIR = REPO_ROOT / "model_artifacts"  # files the model registry loads
 TRAIN_RUNS_DIR = MODEL_ARTIFACTS_DIR / "train_runs"  # output of scripts/training/train_v1.py
+BENCHMARK_DIR = INTERIM_DIR / "joern_benchmark"  # Joern extraction benchmark results
 
 # --- tracked: documentation, grouped by topic ----------------------------------------
 DOCS_DIR = REPO_ROOT / "docs"
