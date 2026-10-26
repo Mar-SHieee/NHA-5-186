@@ -180,13 +180,13 @@ Branch: `w2-p2-extraction-benchmark`. Commits and PR title start with `W2-P2-05:
 ## 5. STATE (update after every step)
 
 ```
-current_phase:      Phase 2 (sample sets)
-last_ticked_step:   2.3
-in_progress:        2.4 (commit: `W2-P2-05: benchmark sample sets`), then Review Gate 2
+current_phase:      Phase 3 (runner)
+last_ticked_step:   3.7
+in_progress:        3.8 (Docker smoke test tests/spikes/test_benchmark_docker_smoke.py)
 branch:             w2-p2-extraction-benchmark
 machine:            Windows, 24 logical CPUs, 16 GB RAM (16,907,100,160 B); Docker Desktop (WSL2, no .wslconfig = defaults) sees 24 CPUs and 8,188,317,696 B (~7.6 GiB)
 repo location:      C:\Users\eyada\OneDrive\Desktop\SHIELD  <-- INSIDE OneDrive (see R9: benchmark work dirs must be outside it)
-baseline:           ruff clean, 184 files formatted, pytest 697 passed + 1 skipped (151 s); after Phase 1: tests/spikes = 52 passed; after 2.2: 67 passed
+baseline:           ruff clean, 184 files formatted, pytest 697 passed + 1 skipped (151 s); after Phase 1: tests/spikes = 52 passed; after 2.2: 67 passed; after 3.2: 97 passed; after 3.3: 105 passed + 1 skipped on Eyad's Windows; after 3.4 code: 127 passed here; after 3.5: tests/spikes 139 passed + 1 skipped on Eyad's Windows; after 3.6: 148 passed + 1 skipped; after 3.7: 170 passed + 1 skipped
 docker image:       shield-joern:latest, id 51394b312f9a, 8.49 GB disk
 probes:             cgroup v2 works (/sys/fs/cgroup/memory.peak) -> peak_method = cgroup_v2; JAVA_OPTS reaches the container env (-Xmx512m printed);
                     Joern's own banner says the frontend (pysrc2cpg / c2cpg) runs as a SEPARATE process with -J-Xmx4096m -> JAVA_OPTS may NOT cap it (to verify in Phase 5)
@@ -197,7 +197,27 @@ samples (2.3):      manifest = 660 rows (60 spike + 600 scale); function length 
                     spike : python 2/20/115/243 · c 1/17/106/245 · cpp 3/10/75/82   (n=20 each)
                     scale : python 2/21/110/6527 · c 1/11/107/828 · cpp 1/19/90/609 (n=200 each)
                     note: python scale max 6527 lines -> likely timeout/heavy-tail case for E5/E6 (300 s default timeout)
-open questions:     none
+environment.json:   captured 2026-10-26 (24 cpu, 16,907,100,160 B RAM, Docker 24 cpu / 8,188,317,696 B, image 51394b312f9a..., repo_inside_onedrive=true, notes 'plugged in, high performance, apps closed')
+step 3.4 smoke:     floor = 10.790 (cold), 0.670, 0.672, 0.671, 0.644 s (median 0.671 s);
+                    python_spike_001 (5 lines, rep=1): wall=8.975 s, parse=5.978 s, export=2.276 s, xml=0.002 s, peak=249.0 MiB, nodes=21, edges=52
+step 3.5 hand run:  `--phase variants --variant A --limit 1 --reps 1 --no-warmup` (no warm-up, so the first run is cold):
+                    c_spike_001 23.514 s (18n/42e) · python_spike_001 8.89 s (21n/52e) · cpp_spike_001 10.288 s (120n/579e); all ok
+                    python A 8.89 s vs python B 8.975 s (3.4): same within noise; C's 23.5 s is probably the cold first run (random order), to be confirmed with a warm-up in Phase 5
+step 3.6 hand run:  `--variant C --batch-sizes 5 --limit 5 --reps 1 --no-warmup --keep` (first 5 samples per group, ONE batch each, cold, no warm-up); all ok:
+                    c      5/5 wall=23.09 s (4.618 s/sample) peak=457.2 MiB batch graph 591n/3678e
+                    python 5/5 wall=13.437 s (2.687 s/sample) peak=293.8 MiB batch graph 1144n/7828e
+                    cpp    5/5 wall=10.96 s (2.192 s/sample) peak=267.9 MiB batch graph 388n/2277e
+                    NOT yet comparable with A/B (different samples, no warm-up): C's c run is probably the cold first run again; Phase 5 decides
+step 3.7 hand run:  `--phase all --dry-run` = 131 runs, rough 3.1 h (guesses, not measured; the plan said ~2 h machine time -> check after Phase 5).
+                    `--phase workers --workers 1,2 --limit 4 --reps 1 --no-warmup` (default best = C b=20, no E3 yet), all ok 4/4, --resume skipped all 12, no shield-bench containers left:
+                    A  s/sample w1->w2: python 8.895->5.422 (speed-up 1.64) · c 7.399->4.056 (1.82) · cpp 8.468->4.663 (1.82)
+                    C  wall w1 / w2: python 11.66/11.45 · c 7.94/8.88 · cpp 20.13/10.18 (cpp w1 was the cold first run); n=4 is too small for C shards (2 JVM starts for 2 samples each), E4 uses 20
+                    peak per C container 259-270 MiB at both worker counts
+                    A c-group w1 = 7.4 s/sample warm vs 23.5 s in 3.5: confirms the 23.5 s was a cold start
+                    Phase 7 hint (C group, 3 identical tiny functions of 18n/42e): batch graphs fit  total = shared overhead + per-file part  exactly
+                    (1 file 18n/42e, 2 files 25n/64e, 4 files 39n/108e -> 11n/20e shared + 7n/22e per file). Only these near-identical samples; not yet a fidelity claim
+open questions:     B's wall_seconds = docker run only (no file writing, no host XML parse); A includes its tempdir + XML parse, so the report must add xml_parse_seconds to B before comparing with A
+open questions (old): none
 blockers:           none
 ```
 
@@ -281,7 +301,7 @@ Checklist:
 - [x] 2.1 Tests first: draw is deterministic (same seed → same ids); scale excludes spike hashes; 200 per group when enough rows else min with a warning; empty code dropped; ids unique and filename-safe; written files contain no `\r`; works on tiny synthetic DataFrames (no real data in CI).
 - [x] 2.2 Implement `load_spike_samples(dir)`, `draw_scale_samples(n_per_group, seed, exclude_sha, dir)`, `write_job_dir(job_dir, samples)`, `write_manifest(path, samples)`.
 - [x] 2.3 Run once on the real data; print counts per group and the min/median/p95/max of `n_lines` per group. Paste them into STATE (they feed the report).
-- [ ] 2.4 Commit: `W2-P2-05: benchmark sample sets`.
+- [x] 2.4 Commit: `W2-P2-05: benchmark sample sets`.
 - **REVIEW GATE 2.**
 
 ### Phase 3: Runner (≈ 120 min, the biggest phase)
@@ -328,13 +348,13 @@ Design notes the implementer must respect:
 
 Checklist:
 
-- [ ] 3.1 Tests first for `build_batch_script` (variant B has 2 Joern commands per file and the right frontend; variant C has exactly one `joern-parse` and one `joern-export` per batch; `@@PEAK` is the last line; a failing file does not stop the loop; file names are quoted) and `build_docker_command` (contains `--rm`, `--name`, `--mount`, `-e JAVA_OPTS=-Xmx4g`, image, `bash -c`; names containing spaces or `;` are rejected).
-- [ ] 3.2 Implement the builders until green.
-- [ ] 3.3 Implement `capture_environment` and `--phase env`; run it; check `environment.json` is written.
-- [ ] 3.4 Implement variant B + `run_decompose`; run on **one** Python sample by hand; check the markers appear and `@@PEAK` is a number.
-- [ ] 3.5 Implement variant A (wrapper around `JoernExtractor`) and run 3 samples by hand.
-- [ ] 3.6 Implement variant C and run a batch of 5 Python and 5 C files by hand; confirm one `export.xml` per batch exists.
-- [ ] 3.7 Implement workers (A threads; B/C shards), `--resume`, `--dry-run`, `--limit`.
+- [x] 3.1 Tests first for `build_batch_script` (variant B has 2 Joern commands per file and the right frontend; variant C has exactly one `joern-parse` and one `joern-export` per batch; `@@PEAK` is the last line; a failing file does not stop the loop; file names are quoted) and `build_docker_command` (contains `--rm`, `--name`, `--mount`, `-e JAVA_OPTS=-Xmx4g`, image, `bash -c`; names containing spaces or `;` are rejected).
+- [x] 3.2 Implement the builders until green.
+- [x] 3.3 Implement `capture_environment` and `--phase env`; run it; check `environment.json` is written.
+- [x] 3.4 Implement variant B + `run_decompose`; run on **one** Python sample by hand; check the markers appear and `@@PEAK` is a number.
+- [x] 3.5 Implement variant A (wrapper around `JoernExtractor`) and run 3 samples by hand.
+- [x] 3.6 Implement variant C and run a batch of 5 Python and 5 C files by hand; confirm one `export.xml` per batch exists.
+- [x] 3.7 Implement workers (A threads; B/C shards), `--resume`, `--dry-run`, `--limit`.
 - [ ] 3.8 Docker smoke test (skipped when `shutil.which("docker")` is `None` or the image is missing): variant B on `tests/fixtures/joern/calls.py`, assert one ok sample and a numeric peak.
 - [ ] 3.9 `ruff check . && ruff format .`, `pytest -q` (whole suite) green; commit: `W2-P2-05: benchmark runner`.
 - **REVIEW GATE 3:** run `python -m scripts.spikes.joern.benchmark_extraction --phase all --dry-run` and show the run list and estimate.
@@ -549,6 +569,15 @@ sequenceDiagram
 2026-10-26  Phase 1 done (1.1-1.5): benchmark_core.py + test_benchmark_core.py (52 tests green), BENCHMARK_DIR in paths.py.
 2026-10-26  Phase 2 steps 2.1-2.2: benchmark_samples.py + test_benchmark_samples.py (15 tests); added the planned-but-missing BENCH_GROUPS and Sample to benchmark_core.py (+3 tests). 67 green. 2.3 and 2.4 wait for real data / commit.
 2026-10-26  Step 2.3 done on real data: 660 samples, manifest written, stats in STATE.
+2026-10-26  Step 2.4 done: committed `W2-P2-05: benchmark sample sets`.
+2026-10-26  Review Gate 2 passed (Eyad said start Phase 3).
+2026-10-26  Steps 3.1-3.2: test_benchmark_commands.py (30 tests, incl. one real-bash run with fake joern tools, skipped on Windows) + builders in benchmark_extraction.py. 97 green in tests/spikes. No commit yet (plan commits at 3.9).
+2026-10-26  Step 3.3 code: parse_docker_info, is_inside_onedrive, capture_environment, main(--phase env) + 9 tests. Run on Eyad's machine: environment.json matched STATE. Ticked.
+2026-10-26  Step 3.4 code: SampleResult/RunOutcome, pick_decompose_samples, run_variant_b, outcome rows, measure_docker_floor, run_decompose, CLI --phase decompose; test_benchmark_runner.py (21 tests with a fake docker). Needs the hand run on Docker to tick.
+2026-10-26  Step 3.4 hand run passed on Docker: floor median 0.671s, python_spike_001 wall=8.975s (parse=5.978s, export=2.276s, xml=0.002s), peak=249.0 MiB, nodes=21, edges=52. Ticked.
+2026-10-26  Step 3.5 hand run passed (A on 1 python + 1 c + 1 cpp sample, all ok; 8.89/23.5/10.3 s without warm-up). run_variant_a + 5 tests already in place. Ticked.
+2026-10-26  Step 3.6: run_variant_c (+ RunOutcome.batch_graphs, --batch-sizes, C in run_variants) + 9 tests; hand run on Docker 5 python/c/cpp in one batch each: all ok, peaks 458/294/268 MiB. Ticked. 148 green.
+2026-10-26  Step 3.7: workers (run_variant_a threads, run_sharded/merge_outcomes for B/C), _run_grid, run_workers, pick_best_config, --resume, --dry-run (plan_runs/format_plan), phases workers/scale/all + 22 tests. Hand run on Docker ok, resume skips, no stray containers. Ticked. 170 green.
 ```
 
 ---
