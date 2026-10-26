@@ -11,8 +11,8 @@ import re
 import numpy as np
 import pandas as pd
 
-from languages import registry
-from languages.registry import UnknownLanguageError
+from shield_core.languages import registry
+from shield_core.languages.registry import UnknownLanguageError
 
 SCHEMA_VERSION = "1.2"  # 1.2: `cve` is now list[str]; 1.1: added `date` and `cve`
 

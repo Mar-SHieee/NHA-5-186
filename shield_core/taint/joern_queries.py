@@ -1,8 +1,8 @@
 # ruff: noqa: E501  (the Scala template lines below are long on purpose)
 """Build the Joern (CPGQL) taint script for one language from its LanguageSpec.
 
-The YAML files in languages/ hold the sources, sinks and sanitizers. This module turns them
-into Scala text, so no query is written by hand. Evidence for every rule: docs/taint_spike.md.
+The YAML files in shield_core/languages/ hold the sources, sinks and sanitizers. This module turns them
+into Scala text, so no query is written by hand. Evidence for every rule: docs/taint/taint_spike.md.
 
 The generated script prints machine-readable lines that start with "@@":
 
@@ -24,7 +24,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 
-from languages.registry import LanguageSpec, SinkSpec, SourceSpec
+from shield_core.languages.registry import LanguageSpec, SinkSpec, SourceSpec
 
 FIELD_SEP = "\t"
 STEP_SEP = "\x1f"  # between label, line and code of ONE path element
@@ -36,7 +36,7 @@ _SCALA_STEP = "\\u001f"
 _SCALA_PATH = "\\u001e"
 
 # joern_frontend (YAML) -> accessor of `importCode`. Python's accessor is `python`, NOT
-# `pythonsrc` (docs/taint_spike.md, section 2).
+# `pythonsrc` (docs/taint/taint_spike.md, section 2).
 IMPORT_ACCESSORS = {"NEWC": "c", "PYTHONSRC": "python", "JAVASRC": "java"}
 
 

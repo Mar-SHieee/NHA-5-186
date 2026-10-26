@@ -3,8 +3,8 @@ import json
 import sys
 from pathlib import Path
 
-from languages import registry
 from shield_core.interface import ShieldError, predict
+from shield_core.languages import registry
 
 
 def fail(message: str):

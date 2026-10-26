@@ -48,6 +48,9 @@ cpg.bin
 export/
 
 # Joern exploration output (local only)
-sample*/
+/sample*/
 
 mlflow.db
+
+# Trained models and training-run outputs
+model_artifacts/
