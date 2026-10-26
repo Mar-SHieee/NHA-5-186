@@ -180,19 +180,23 @@ Branch: `w2-p2-extraction-benchmark`. Commits and PR title start with `W2-P2-05:
 ## 5. STATE (update after every step)
 
 ```
-current_phase:      Phase 0 (only 0.9 commit left)
-last_ticked_step:   0.8
-in_progress:        0.9 (git add + commit of this plan file)
+current_phase:      Phase 2 (sample sets)
+last_ticked_step:   2.3
+in_progress:        2.4 (commit: `W2-P2-05: benchmark sample sets`), then Review Gate 2
 branch:             w2-p2-extraction-benchmark
 machine:            Windows, 24 logical CPUs, 16 GB RAM (16,907,100,160 B); Docker Desktop (WSL2, no .wslconfig = defaults) sees 24 CPUs and 8,188,317,696 B (~7.6 GiB)
 repo location:      C:\Users\eyada\OneDrive\Desktop\SHIELD  <-- INSIDE OneDrive (see R9: benchmark work dirs must be outside it)
-baseline:           ruff clean, 184 files formatted, pytest 697 passed + 1 skipped (151 s)
+baseline:           ruff clean, 184 files formatted, pytest 697 passed + 1 skipped (151 s); after Phase 1: tests/spikes = 52 passed; after 2.2: 67 passed
 docker image:       shield-joern:latest, id 51394b312f9a, 8.49 GB disk
 probes:             cgroup v2 works (/sys/fs/cgroup/memory.peak) -> peak_method = cgroup_v2; JAVA_OPTS reaches the container env (-Xmx512m printed);
                     Joern's own banner says the frontend (pysrc2cpg / c2cpg) runs as a SEPARATE process with -J-Xmx4096m -> JAVA_OPTS may NOT cap it (to verify in Phase 5)
 docker floor:       `docker run --rm shield-joern true` = 0.762, 0.792, 0.740, 0.728, 0.796 s (median 0.762 s)
 data present:       *_samples_20 for bigvul, megavul, cvefixes_python (+cvefixes_cpp); *_deduped for bigvul, megavul, cvefixes_python, cvefixes_cpp
 key numbers so far: Docker start-up is only ~0.76 s of the old 5.85 s/sample -> most of F must be the JVM launches and Joern work (H1 needs refining)
+samples (2.3):      manifest = 660 rows (60 spike + 600 scale); function length in lines, min / median / p95 / max
+                    spike : python 2/20/115/243 · c 1/17/106/245 · cpp 3/10/75/82   (n=20 each)
+                    scale : python 2/21/110/6527 · c 1/11/107/828 · cpp 1/19/90/609 (n=200 each)
+                    note: python scale max 6527 lines -> likely timeout/heavy-tail case for E5/E6 (300 s default timeout)
 open questions:     none
 blockers:           none
 ```
@@ -213,7 +217,7 @@ Time estimates are honest ones: the team plan says 1.5 h, but a measured, reprod
 - [x] 0.6 Probe cgroup memory counter: `docker run --rm shield-joern bash -c "cat /sys/fs/cgroup/memory.peak || cat /sys/fs/cgroup/memory/memory.max_usage_in_bytes"`. Record which works (decides `peak_method`).
 - [x] 0.7 Probe that `JAVA_OPTS` is honoured: `docker run --rm -e JAVA_OPTS=-Xmx512m shield-joern bash -c "echo \$JAVA_OPTS && joern-parse --help | head -3"`. Record result.
 - [x] 0.8 Probe the Docker cost floor: time `docker run --rm shield-joern true` five times (record each).
-- [ ] 0.9 Commit this plan file into `docs/project/` (first commit: `W2-P2-05: add benchmark plan`).
+- [x] 0.9 Commit this plan file into `docs/project/` (first commit: `W2-P2-05: add benchmark plan`).
 - **REVIEW GATE 0:** show the user the outputs of 0.3 to 0.8. Wait for OK.
 
 ### Phase 1: Pure core module and its tests (≈ 60 min)
@@ -254,11 +258,11 @@ def completed_keys(rows) -> set[tuple]                # for --resume
 
 Checklist:
 
-- [ ] 1.1 `paths.py`: add `BENCHMARK_DIR`; `pytest tests/languages/test_registry.py tests/test_layout.py -q` still green.
-- [ ] 1.2 Write the tests **first** (they define behaviour): batching (exact division, remainder, size larger than list, empty list, size 0 raises) · marker parsing (normal, noise lines ignored, `@@PEAK NA`, missing markers) · failure classes (timeout, return code 137 → `oom`, non-zero → `joern_error`, rc 0 but no export → `no_export`, docker "Cannot connect" in stderr → `docker_error`) · `summarize` (odd/even length median, p95 nearest-rank on 20 values, empty, single value) · projections (5.85 s/sample ↔ throughput 1/5.85 → 739.8 h for 455,236 rows within 0.1; zero throughput raises; `rows_per_night(1.0) == 36000`) · CSV (header written once, append keeps order, roundtrip, unknown column raises) · `completed_keys`.
-- [ ] 1.3 Implement until green. Keep functions small and typed.
-- [ ] 1.4 `ruff check . && ruff format .` then `pytest tests/spikes -q`.
-- [ ] 1.5 Commit: `W2-P2-05: benchmark core helpers and tests`.
+- [x] 1.1 `paths.py`: add `BENCHMARK_DIR`; `pytest tests/languages/test_registry.py tests/test_layout.py -q` still green.
+- [x] 1.2 Write the tests **first** (they define behaviour): batching (exact division, remainder, size larger than list, empty list, size 0 raises) · marker parsing (normal, noise lines ignored, `@@PEAK NA`, missing markers) · failure classes (timeout, return code 137 → `oom`, non-zero → `joern_error`, rc 0 but no export → `no_export`, docker "Cannot connect" in stderr → `docker_error`) · `summarize` (odd/even length median, p95 nearest-rank on 20 values, empty, single value) · projections (5.85 s/sample ↔ throughput 1/5.85 → 739.8 h for 455,236 rows within 0.1; zero throughput raises; `rows_per_night(1.0) == 36000`) · CSV (header written once, append keeps order, roundtrip, unknown column raises) · `completed_keys`.
+- [x] 1.3 Implement until green. Keep functions small and typed.
+- [x] 1.4 `ruff check . && ruff format .` then `pytest tests/spikes -q`.
+- [x] 1.5 Commit: `W2-P2-05: benchmark core helpers and tests`.
 - **REVIEW GATE 1:** walk the user through each function and test; wait for OK.
 
 ### Phase 2: Sample sets (≈ 45 min)
@@ -274,9 +278,9 @@ Rules:
 
 Checklist:
 
-- [ ] 2.1 Tests first: draw is deterministic (same seed → same ids); scale excludes spike hashes; 200 per group when enough rows else min with a warning; empty code dropped; ids unique and filename-safe; written files contain no `\r`; works on tiny synthetic DataFrames (no real data in CI).
-- [ ] 2.2 Implement `load_spike_samples(dir)`, `draw_scale_samples(n_per_group, seed, exclude_sha, dir)`, `write_job_dir(job_dir, samples)`, `write_manifest(path, samples)`.
-- [ ] 2.3 Run once on the real data; print counts per group and the min/median/p95/max of `n_lines` per group. Paste them into STATE (they feed the report).
+- [x] 2.1 Tests first: draw is deterministic (same seed → same ids); scale excludes spike hashes; 200 per group when enough rows else min with a warning; empty code dropped; ids unique and filename-safe; written files contain no `\r`; works on tiny synthetic DataFrames (no real data in CI).
+- [x] 2.2 Implement `load_spike_samples(dir)`, `draw_scale_samples(n_per_group, seed, exclude_sha, dir)`, `write_job_dir(job_dir, samples)`, `write_manifest(path, samples)`.
+- [x] 2.3 Run once on the real data; print counts per group and the min/median/p95/max of `n_lines` per group. Paste them into STATE (they feed the report).
 - [ ] 2.4 Commit: `W2-P2-05: benchmark sample sets`.
 - **REVIEW GATE 2.**
 
@@ -541,6 +545,10 @@ sequenceDiagram
 
 ```
 2026-10-26  plan written (this file). No code yet.
+2026-10-26  Phase 0 done (0.1-0.9): env, Docker, probes, plan committed.
+2026-10-26  Phase 1 done (1.1-1.5): benchmark_core.py + test_benchmark_core.py (52 tests green), BENCHMARK_DIR in paths.py.
+2026-10-26  Phase 2 steps 2.1-2.2: benchmark_samples.py + test_benchmark_samples.py (15 tests); added the planned-but-missing BENCH_GROUPS and Sample to benchmark_core.py (+3 tests). 67 green. 2.3 and 2.4 wait for real data / commit.
+2026-10-26  Step 2.3 done on real data: 660 samples, manifest written, stats in STATE.
 ```
 
 ---

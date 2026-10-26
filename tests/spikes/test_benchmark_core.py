@@ -382,3 +382,37 @@ def test_completed_keys_distinguishes_configurations(tmp_path):
 
 def test_completed_keys_of_nothing_is_empty():
     assert completed_keys([]) == set()
+
+
+# ----------------------------------------------------------------------------- Sample
+
+
+def test_bench_groups_map_group_to_language_and_extension():
+    from scripts.spikes.joern.benchmark_core import BENCH_GROUPS
+
+    assert BENCH_GROUPS == {
+        "python": ("python", ".py"),
+        "c": ("cpp", ".c"),  # C uses the cpp registry language but the .c parser
+        "cpp": ("cpp", ".cpp"),
+    }
+
+
+def test_sample_properties_use_normalized_code():
+    from scripts.spikes.joern.benchmark_core import Sample
+    from shield_core.extraction.graph_extractor import code_sha256
+
+    s = Sample("python_spike_001", "python", ".py", "a = 1\r\nb = 2\r\n", "spike", "x", 0)
+    assert s.n_lines == 2  # \r\n counts once
+    assert s.n_chars == len("a = 1\nb = 2\n")
+    assert s.sha256 == code_sha256("a = 1\nb = 2\n")  # same hash on Windows and Linux
+
+
+def test_sample_is_frozen_and_empty_code_has_zero_lines():
+    import dataclasses
+
+    from scripts.spikes.joern.benchmark_core import Sample
+
+    s = Sample("c_scale_001", "c", ".c", "", "scale", "bigvul", 3)
+    assert s.n_lines == 0 and s.n_chars == 0
+    with pytest.raises(dataclasses.FrozenInstanceError):
+        s.code = "x"  # type: ignore[misc]

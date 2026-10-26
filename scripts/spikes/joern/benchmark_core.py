@@ -13,7 +13,42 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, TypeVar
 
+from shield_core.extraction.graph_extractor import code_sha256, normalize_code
+
 T = TypeVar("T")
+
+# group -> (registry language id, file extension). "c" and "cpp" share the registry language
+# "cpp" but differ in extension, and the extension changes which Joern parser runs.
+BENCH_GROUPS: dict[str, tuple[str, str]] = {
+    "python": ("python", ".py"),
+    "c": ("cpp", ".c"),
+    "cpp": ("cpp", ".cpp"),
+}
+
+
+@dataclass(frozen=True)
+class Sample:
+    """One function to extract. `set_name` is "spike" (the 60 old samples) or "scale"."""
+
+    sample_id: str
+    group: str
+    extension: str
+    code: str
+    set_name: str
+    source: str  # dataset the row came from, e.g. "bigvul"
+    row_index: int  # position of the row in that dataset's parquet file
+
+    @property
+    def n_chars(self) -> int:
+        return len(normalize_code(self.code))
+
+    @property
+    def n_lines(self) -> int:
+        return len(normalize_code(self.code).splitlines())
+
+    @property
+    def sha256(self) -> str:
+        return code_sha256(self.code)
 
 
 def split_batches(items: Sequence[T], size: int) -> list[list[T]]:
