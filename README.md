@@ -75,7 +75,7 @@ repository, it answers four questions:
 
 ```mermaid
 flowchart LR
-    V1["<b>V1</b><br/>frozen CodeBERT embedding<br/>+ XGBoost / baseline"]:::wip
+    V1["<b>V1</b><br/>windowed CodeBERT embeddings<br/>+ calibrated XGBoost"]:::done
     V2["<b>V2</b><br/>V1 + AST and code-metric<br/>features"]:::plan
     V3["<b>V3</b><br/>GNN over the Joern<br/>code property graph"]:::plan
     V4["<b>V4</b><br/>fusion: CodeBERT ∥ GNN<br/>+ taint features"]:::plan
@@ -85,8 +85,8 @@ flowchart LR
     classDef plan fill:#e8e8e8,stroke:#999,color:#222;
 ```
 
-*Yellow = partially built, grey = planned. V1 is the safety net: whenever a newer model cannot load, the
-model registry falls back to V1 automatically.*
+*Green = working, yellow = partially built, grey = planned. V1 is the current Python model. If its
+artifact is missing or cannot load, the registry falls back to the built-in stub.*
 
 ### Design principles (they explain most of the folder layout)
 
@@ -107,25 +107,26 @@ model registry falls back to V1 automatically.*
 
 ## 2. Project status at a glance
 
-*Plan version v1.1. Week 1 closed (Gate G1 passed with conditions). Week 2 is in progress; Gate G2 is the next gate.*
+*Plan version v1.2. The Python V1 training, artifact, registry loader, and CLI path are implemented. Other Gate G2 items remain tracked in `SHIELD_PLAN.md`.*
 
 ### Component maturity
 
 | Area | Component | Status | Notes |
 | --- | --- | :---: | --- |
 | **Contract** | `interface.py` data classes, errors, versions | ✅ | Frozen at 1.0 |
-| | `predict(code, language)` | ✅ | Real routing through language + model registries; the only registered model is the **stub** (always "not vulnerable") |
+| | `predict(code, language)` | ✅ | Routes Python to the CodeBERT + XGBoost V1; other configured languages use their registry fallback |
 | | `scan_repo(path)` | 🧱 | Validates the path, returns an empty `RepoResult` |
 | | `suggest_fix(finding)` | 🧱 | Returns `no_fix_available`; templates exist but are **not wired in yet** (task W3-P4-02) |
 | **CLI** | `shield scan <file>` | ✅ | Detects language, calls `predict`, prints JSON |
 | | `shield scan-repo`, `shield fix` | ⬜ | Planned (Weeks 3–4) |
 | **Languages** | Registry + `python.yaml`, `cpp.yaml` | ✅ | Python and C/C++ enabled |
 | | `java.yaml` | ⬜ | Present but **disabled** (decision D36) |
-| **Models** | Model registry (`models.yaml`, fallback to V1) | ✅ | Only kind registered today: `stub` |
-| | V1 training (`scripts/training/train_v1.py`) | 🟡 | Trains and evaluates; model saving and MLflow logging are still commented out; not yet registered in `models.yaml` |
+| **Models** | Model registry (`models.yaml`) | ✅ | Python defaults to the tracked `v1`; C/C++ currently use the stub |
+| | V1 training and artifact | ✅ | Window-pooled CodeBERT vectors → class-weighted XGBoost binary and CWE heads; calibration, metrics, saved runs, and MLflow logging |
+| | V1 distribution | 🟡 | Installer downloads V1 from the `shield-v1.zip` asset on GitHub Release tag `v1` |
 | | V2 (AST/code-metric features) | ⬜ | Needs tree-sitter utilities (W2-P5-02) |
 | | V3 GNN, V4 fusion | ⬜ | Only a toy GNN on MUTAG (`scripts/tutorials/pyg/`) |
-| **Embeddings** | `CodeBERTEmbedder` (batched, fp16 on GPU, 512-token truncation, in-memory results) | ✅ | No disk cache; long functions are windowed by `scripts/embeddings/long_embedding.py` |
+| **Embeddings** | `CodeBERTEmbedder` (batched, fp16 on GPU, 512-token windows) | ✅ | V1 training caches vectors by function content so they can be reused across splits and runs |
 | | `CPGNodeEmbedder` (node text → vector) | 🟡 | In-memory cache only; no disk cache yet |
 | **Data** | Loaders for 5 sources | ✅ | MegaVul, Big-Vul, CVEfixes C/C++, CVEfixes Python, Zenodo Python |
 | | Unified schema 1.2 (10 columns) | ✅ | Adds `date` and `cve` to the original 8 |
@@ -200,23 +201,39 @@ shield scan path/to/file.py
 shield scan snippet.txt --language python      # override language detection
 ```
 
-Today this returns the **stub** model's answer. This is real output from the current repo:
+For Python, the registry uses V1 after it is installed. It requires the `ml` extra and downloads
+CodeBERT weights on first inference if they are not cached. The JSON shape remains the frozen
+`Result` contract, including the selected model version:
 
 ```json
 {
   "vulnerable": false,
   "cwe": null,
-  "confidence": 0.0,
+  "confidence": 0.47,
   "findings": [],
   "taint_paths": [],
-  "model_version": "stub",
+  "model_version": "v1",
   "schema_version": "1.0"
 }
 ```
 
-The important part is that the *whole path is real*: file → language detection → language registry →
-model registry → model → frozen `Result`. When the real V1 is registered, this exact command starts
-returning real predictions with **no code change** in the CLI or the interface.
+The whole path runs: file → language detection → language registry → model registry → V1 → frozen
+`Result`. V1 is Python-only; C and C++ still use the stub until models for those languages are trained.
+
+### Get V1 after cloning or pulling the repository
+
+V1 is distributed as a GitHub Release asset because the model files exceed the repository file-size
+hook limit. After a maintainer publishes `shield-v1.zip` on release tag `v1`, install the project,
+download the artifact, and scan a Python file:
+
+```powershell
+python -m pip install -e ".[ml]"
+python -m shield_core.models.install --tag v1
+python -m shield_core.cli scan .\path\to\file.py
+```
+
+The installer verifies the bundle checksums before writing `model_artifacts/v1/`. For a private
+repository, set `GH_TOKEN` or `GITHUB_TOKEN` with permission to read release assets.
 
 ### Try it: generate and verify a fix (library level, not yet wired to the CLI)
 
@@ -276,10 +293,10 @@ flowchart TB
 
     subgraph MODELS["🧠 Models"]
         CB["CodeBERT path<br/>windowed embeddings"]:::done
-        V1["V1 · XGBoost"]:::wip
+        V1["V1 · CodeBERT + XGBoost"]:::done
         GNN["Graph path<br/>PyG + GNN (V3)"]:::plan
         FUS["Fusion (V4)<br/>+ calibration"]:::plan
-        REG["Model registry<br/>default + V1 fallback"]:::done
+        REG["Model registry<br/>Python V1 + stub fallback"]:::done
     end
 
     subgraph FIXV["🩹 Fix and verify"]
@@ -326,7 +343,7 @@ flowchart LR
     C --> D["interface.predict"]
     D --> E["models/registry.py<br/>get_model"]
     E --> F["models.yaml<br/>default: v1"]
-    F --> G["StubModel<br/>kind: stub"]
+    F --> G["V1Model<br/>CodeBERT → XGBoost"]
     G --> H["Result JSON"]
     classDef real fill:#d4f4dd,stroke:#2e9b4f,color:#222;
     classDef stub fill:#fff4cc,stroke:#c9a400,color:#222;
@@ -334,8 +351,8 @@ flowchart LR
     class G stub;
 ```
 
-Everything is real except the model at the end of the chain. That is deliberate: it lets the CLI, tests and
-contract be finished before the model is.
+The Python model is the trained V1 when its artifact is installed. If V1 cannot load, the registry uses
+the built-in stub. C/C++ currently have no trained V1 entry and therefore use that stub.
 
 ---
 ## 5. Folder structure schema
@@ -375,7 +392,7 @@ SHIELD/
 │   ├── extraction/               ← code → graph: graph_extractor.py (interface) · joern_extractor.py · cache.py
 │   ├── taint/                    ← joern_queries.py: YAML sources/sinks/sanitizers → Joern script → parsed flows
 │   ├── embeddings/               ← CodeBERT: embedder.py (functions) · node_embeddings.py (graph nodes)
-│   ├── models/                   ← registry.py + models.yaml: which model answers, automatic V1 fallback
+│   ├── models/                   ← registry.py + models.yaml: which model answers, Python V1 default with stub fallback
 │   ├── fix/templates/            ← template fixes for CWE-89 · CWE-78 · CWE-22
 │   ├── verify/                   ← "is this fix sane?": pysource · pattern_checks · evidence (verdict)
 │   └── 📊 eval/                  ← metrics.py (precision / recall / F1, confusion matrix)
@@ -435,7 +452,7 @@ SHIELD/
 | `shield_core/extraction/` | Turning code into a graph. Caching results. | Decide whether code is vulnerable. |
 | `shield_core/taint/` | Building taint queries from language configuration and parsing Joern's answers. | Run Docker itself (the driver in `scripts/spikes/taint/` does). |
 | `shield_core/embeddings/` | Turning code (functions or graph nodes) into CodeBERT vectors. | Train or classify. |
-| `shield_core/models/` | Selecting and loading models (registry) with automatic V1 fallback. | Hard-code model versions. |
+| `shield_core/models/` | Selecting and loading models (registry) with Python V1 default with stub fallback. | Hard-code model versions. |
 | `shield_core/fix/` | Generating a candidate fix (templates today). | Judge the fix. |
 | `shield_core/verify/` | Judging a proposed fix: syntax, class-specific pattern, evidence line, PASS/FAIL verdict. | Generate fixes. |
 | `shield_core/eval/` | Computing metrics from predictions. | Load data or models. |
@@ -443,7 +460,7 @@ SHIELD/
 | `tests/` | Unit tests mirroring `shield_core/`, plus fixtures for Joern and taint. | |
 | `docker/joern/` | A pinned, reproducible Joern + Java + tree-sitter environment. | |
 | `docs/` | Written evidence by topic: audits, spikes, design notes, leakage reports, API contract. | |
-| `data/`, `model_artifacts/`, `mlruns/` | Large, generated, git-ignored outputs. | |
+| `data/`, `model_artifacts/`, `mlruns/` | Large, generated or externally distributed outputs; model artifacts are git-ignored. | |
 
 ---
 
@@ -459,7 +476,8 @@ SHIELD/
 | Choose, load and fall back between models | `shield_core/models/` | `registry.py`, `models.yaml` | ✅ |
 | Embed code with CodeBERT (incl. long functions) | `shield_core/embeddings/` | `embedder.py` | ✅ |
 | Embed graph nodes with CodeBERT | `shield_core/embeddings/` | `node_embeddings.py` | 🟡 |
-| Train the V1 classifier | `scripts/` | `train_v1.py` | 🟡 |
+| Train, compare and publish a V1 run | `scripts/training/` | `train_v1.py`, `v1_pipeline.py` | ✅ |
+| Install Python V1 after pulling the repository | `shield_core/models/` | `install.py` | ✅ (requires the `shield-v1.zip` GitHub Release asset) |
 | Compute metrics | `shield_core/eval/` | `metrics.py` | 🟡 |
 | Log runs, seeds, dataset hashes | `shield_core/` | `tracking.py` | ✅ |
 | Download / load a dataset into the unified schema | `shield_core/datasets/*_loaders/` | one loader per source | ✅ |
@@ -522,9 +540,10 @@ SHIELD/
 
 | File | Purpose | Input | Output |
 | --- | --- | --- | --- |
-| `models.yaml` | Model catalogue: `default`, `fallback`, and entries `{version, kind, languages, path?, sha256?, options?}`. Today: `v1`, kind `stub`. | — | — |
-| `registry.py` | Reads `models.yaml`, picks a model: default → fallback (warning logged) → built-in stub → error. Verifies optional `sha256`. New model *kinds* are registered with `register_kind` (lazy import, so torch/xgboost load only when needed). Env overrides: `SHIELD_MODELS_CONFIG`, `SHIELD_MODELS_DIR`. | `get_model(language, version=None)` | object with `.predict(code, language)` and `.version` |
-| `embeddings/embedder.py` | `CodeBERTEmbedder`: frozen `microsoft/codebert-base`, fp16 on GPU (CPU otherwise), batch inference (default 16) with a `tqdm` progress bar, mean-pooled over the attention mask, truncated at 512 tokens. Results stay in memory only: there is no disk cache (`cache_dir` is created but unused). Empty or non-string inputs return `None`. | list of code strings | one tensor per string (or `None`) |
+| `models.yaml` | Model catalogue: Python `v1` (`kind: v1`, `path: v1`) is default; the stub handles languages without a trained model. | — | — |
+| `registry.py` | Reads `models.yaml`, picks default → fallback → built-in stub → error. V1 is loaded lazily, with optional artifact SHA-256 validation. Env overrides: `SHIELD_MODELS_CONFIG`, `SHIELD_MODELS_DIR`. | `get_model(language, version=None)` | object with `.predict(code, language)` and `.version` |
+| `v1/__init__.py` | Loads the trained XGBoost binary/CWE models, confidence calibrator and threshold; embeds incoming Python code with the configured windowed CodeBERT settings. | code + language | frozen `Result` |
+| `embeddings/embedder.py` | `CodeBERTEmbedder`: frozen `microsoft/codebert-base`, fp16 on GPU (CPU otherwise), mean-pools token states. The training pipeline adds a persistent content-addressed cache of window-pooled vectors; inference uses the same windowing policy. | list of code strings | one tensor per string (or `None`) |
 | `embeddings/node_embeddings.py` | `CPGNodeEmbedder`: frozen fp16 CodeBERT embeds a node's code text; in-memory cache by string hash; counts requests/hits. | node text | vector |
 | `fix/templates/__init__.py` | `TEMPLATES` map `{sql_parameterize, command_argv, path_confine}` and `get_template(name)`. | template name | function `(code, context="") → TemplateResult` |
 | `fix/templates/base.py` | `TemplateResult(applied, fixed_code, reason, required_imports)`, `refuse()`, `finalize()` (a template never returns code that does not parse). | — | — |
@@ -580,7 +599,7 @@ SHIELD/
 
 | Script | Purpose | Input | Output |
 | --- | --- | --- | --- |
-| `training/train_v1.py` | Trains the V1 baseline for Python: binary vulnerable/not and CWE head; TF-IDF + logistic regression by default, XGBoost and CodeBERT embeddings selectable in `CONFIG`; calibration (isotonic), Brier/AUC/MCC metrics. Saving and MLflow lines are present but commented out. | `data/interim/splits/*.parquet`, manifest, optional `*_embeddings.npy` | metrics printed; `model_artifacts/train_runs/<model>_v1_<timestamp>/calibration_plot_data.csv` (model files not saved yet) |
+| `training/train_v1.py` + `training/v1_pipeline.py` | Trains Python binary and CWE XGBoost heads on cached windowed CodeBERT vectors; uses class weights, validation isotonic calibration and MCC threshold selection. Supports precomputed `.npy` vectors, parameter grids, per-CWE metrics, model saving and optional MLflow logging. | split metadata + either source code or aligned embeddings | complete run under `model_artifacts/train_runs/`; `--publish` copies the best validation run to `model_artifacts/v1/` |
 | `data_audit/acceptance_check.py` | Read-only dataset audit (schema, empty code, duplicate hashes, language × CWE counts). | `data/interim/*_deduped.parquet` | `docs/datasets/audits/dataset_audit.md` |
 | `data_audit/check_cvefixes_absent_commits.py` | Explains why some CVEfixes commits are missing from function-level data. | raw CVEfixes tables | `docs/cvefixes_*_absent_commits.md` |
 | `data_audit/explore_bigvul.py`, `explore_cvefixes_cpp.py`, `explore_cvefixes_python.py`, `explore_megavul.py`, `explore_zenodo_python.py` | Dataset exploration reports. | raw/interim data | `docs/*_exploration.md` |
@@ -642,7 +661,7 @@ sequenceDiagram
     participant IF as interface.py
     participant MR as models/registry.py
     participant YML as models.yaml
-    participant M as Model (stub today)
+    participant M as Registered model (V1 for Python)
 
     U->>CLI: shield scan file.py
     CLI->>CLI: path is a file? (else exit 2)
@@ -654,12 +673,12 @@ sequenceDiagram
     LR-->>IF: ok (or UnsupportedLanguageError)
     IF->>MR: get_model("python")
     MR->>YML: read default / fallback / models[]
-    YML-->>MR: default v1 (kind: stub)
+    YML-->>MR: default v1 (kind: v1, Python)
     MR->>M: load via the loader of that kind
     M-->>MR: model object
     MR-->>IF: model
     IF->>M: model.predict(code, "python")
-    M-->>IF: Result(vulnerable=false ...)
+    M-->>IF: Result with V1 prediction + confidence
     IF->>IF: result.model_version = model.version
     IF-->>CLI: Result
     CLI-->>U: JSON on stdout, exit 0
@@ -854,7 +873,7 @@ flowchart LR
 Scripts sit *outside* this map and only import from it:
 `acceptance_check.py → dedupe, schema, registry` · `try_extractor.py → cache, joern_extractor` ·
 `long_embedding.py → embedder` · `run_taint_spike.py → joern_queries, registry` · `demo_tracking.py → tracking`.
-`train_v1.py` is deliberately standalone: it reads the split parquet files and imports nothing from `shield_core`.
+`train_v1.py` is the command-line entry point for `scripts/training/v1_pipeline.py`; the pipeline uses the shared CodeBERT embedder, persistent embedding cache, model tracking, and model registry artifact layout.
 
 ---
 
@@ -893,7 +912,7 @@ flowchart TD
     MG[/"merged_datasets.parquet"/]
     SP[/"splits/ train · val · test · holdout<br/>assignments.parquet<br/>docs/datasets/audits/dataset_manifest_v0.json"/]
     EM[/"&lt;split&gt;_embeddings.npy<br/>&lt;split&gt;_processed.parquet"/]
-    ART[/"model_artifacts/train_runs/…/calibration_plot_data.csv<br/>(model files: to be enabled)"/]
+    ART[/"model_artifacts/train_runs/…/<br/>XGBoost models + metrics + calibration data"/]
 
     K1 -->|bigvul_loader.py| R1
     K2 -->|download or place| R2
@@ -932,7 +951,7 @@ flowchart TD
 | 6 | `python -m shield_core.datasets.pipeline.merge` | `*_deduped.parquet` | `data/interim/merged_datasets.parquet` | step 7 |
 | 7 | `python -m shield_core.datasets.pipeline.splits` | `merged_datasets.parquet` | `data/interim/splits/*.parquet`, `docs/datasets/audits/dataset_manifest_v0.json` | steps 8, 9 |
 | 8 | `python -m scripts.embeddings.long_embedding --data <split>.parquet` | one split | `<stem>_processed.parquet`, `<stem>_embeddings.npy` | step 9 (optional features) |
-| 9 | `python scripts/training/train_v1.py` | `splits/{train,val,test}.parquet` (+ embeddings) | printed metrics, `model_artifacts/train_runs/*/calibration_plot_data.csv` | *(next: register the model in `models.yaml`)* |
+| 9 | `python -m scripts.training.train_v1 --grid '{"max_depth":[3,5],"learning_rate":[0.03,0.07]}' --publish` | train/val/test metadata, CodeBERT cache or aligned vectors, manifest | run folders, `v1_grid_comparison.csv`, and (with `--publish`) `model_artifacts/v1/` | scan with `shield scan` |
 
 ### 10.3 Inputs and outputs of each runtime stage
 
@@ -1035,7 +1054,7 @@ stateDiagram-v2
 
     UseDefault --> Loaded: default lists the language and loads
     UseDefault --> TryFallback: default missing, or fails to load (warning logged)
-    TryFallback --> Loaded: fallback (V1) loads
+    TryFallback --> Loaded: fallback (stub-v0) loads
     TryFallback --> LoadError: entries exist but none can be loaded
     UseDefault --> BuiltInStub: no entry lists this language
 
@@ -1073,11 +1092,11 @@ flowchart TD
     W2 --> LEN["token_length_stats.py<br/>how many functions exceed 512 tokens?"]:::real
     LEN --> EMB["long_embedding.py<br/>510-token windows, mean-pool, CodeBERT fp16"]:::real
     EMB --> TR
-    W2 --> TR["train_v1.py<br/>features → fit → isotonic calibration<br/>→ MCC-optimal threshold → CWE head"]:::wip
-    TR --> MET["print metrics, write calibration CSV"]:::real
-    MET --> SAVE["save model files + log to MLflow"]:::plan
-    SAVE --> REG["register kind + entry in models.yaml"]:::plan
-    REG --> DONE(["■ shield scan now returns real predictions"]):::plan
+    W2 --> TR["train_v1.py<br/>windowed CodeBERT → class-weighted XGBoost<br/>→ isotonic calibration + MCC threshold"]:::real
+    TR --> MET["save metrics, per-CWE table,<br/>calibration data + MLflow run"]:::real
+    MET --> SAVE["save run under train_runs/<br/>publish best to model_artifacts/v1/"]:::real
+    SAVE --> REG["Python default in models.yaml<br/>V1 loader in registry"]:::real
+    REG --> DONE(["■ shield scan returns V1 result"]):::real
 
     classDef real fill:#d4f4dd,stroke:#2e9b4f,color:#222;
     classDef wip fill:#fff4cc,stroke:#c9a400,color:#222;
@@ -1151,7 +1170,7 @@ the VS Code extension depend on. `INTERFACE_VERSION = "1.0"` (signatures and exc
 
 | Function | Input | Output | Today |
 | --- | --- | --- | :---: |
-| `predict(code, language)` | source text + a language id from the registry | `Result` | ✅ routed to the model registry (stub model) |
+| `predict(code, language)` | source text + a language id from the registry | `Result` | ✅ V1 for Python when installed; stub fallback otherwise |
 | `scan_repo(path)` | directory path | `RepoResult` | 🧱 empty result; raises `RepoNotFoundError` for a non-directory |
 | `suggest_fix(finding, code=None)` | a `Finding` | `FixResult` | 🧱 `no_fix_available` |
 
@@ -1230,7 +1249,7 @@ classDiagram
 | --- | --- | :-: | --- |
 | `UnsupportedLanguageError` (also a `ValueError`) | language unknown or disabled | 422 | `unsupported_language` |
 | `RepoNotFoundError` (also a `FileNotFoundError`) | `scan_repo` path is not a directory | 404 | `not_found` |
-| `ModelUnavailableError` (also a `RuntimeError`) | no model could be loaded, not even the V1 fallback | 503 | `model_unavailable` |
+| `ModelUnavailableError` (also a `RuntimeError`) | no configured model or fallback could be loaded | 503 | `model_unavailable` |
 
 All three inherit from `ShieldError`, so callers can catch one base class.
 
@@ -1271,12 +1290,15 @@ The registry **rejects** unknown keys, bad regexes and bad indices at load time,
 
 ```yaml
 default: v1          # used when nobody asks for a version
-fallback: v1         # used when the default cannot be loaded (V1, always)
+fallback: stub-v0    # used when V1 cannot be loaded
 models:
   - version: v1
-    kind: stub       # how to load it; the registry maps kind → loader
+    kind: v1         # CodeBERT embeddings + XGBoost
+    languages: [python]
+    path: v1         # folder inside model_artifacts/ (or $SHIELD_MODELS_DIR)
+  - version: stub-v0
+    kind: stub
     languages: [python, cpp]
-    # path:    file inside model_artifacts/ (or $SHIELD_MODELS_DIR)   (optional)
     # sha256:  checksum of that file; a mismatch = corrupt model       (optional)
     # options: settings passed to the loader of that kind              (optional)
 ```
@@ -1357,7 +1379,7 @@ pre-commit run --all-files  # everything above, as on commit
 | --- | --- |
 | The frozen contract (fields, versions, errors) | `test_contract.py`, `test_interface.py` |
 | **No language name hard-coded outside the registry** | `test_registry.py::test_no_language_literals_outside_registry` |
-| Model fallback ("remove the newer model, V1 answers") | `test_model_registry.py` |
+| V1 default and stub fallback when the artifact is unavailable | `test_model_registry.py`, `test_v1_model.py` |
 | Graph cache: hit, miss, version bump, corruption, failure not cached | `test_graph_cache.py` |
 | Taint query generation | `test_taint_queries.py` |
 | Every fix template, including its refusals | `test_fix_template_*.py`, `test_pattern_checks.py`, `test_evidence.py` |
@@ -1382,34 +1404,22 @@ The design goal is that this is **configuration plus data**, not core code.
 6. Train per-language models with the existing scripts; add `fix_templates` for the top CWEs.
 7. Set `enabled: true`. The CLI, API and UIs read the enabled list from the registry automatically.
 
-### 16.2 Add a model kind (for example the real V1)
+### 16.2 Train and distribute a model version
 
-```yaml
-# shield_core/models/models.yaml
-default: v1
-fallback: v1
-models:
-  - version: v1
-    kind: tfidf_xgb                 # new kind
-    languages: [python]
-    path: v1/preprocessing.joblib   # relative to model_artifacts/
-    sha256: <checksum>
+The V1 kind and registry entry are already configured. Train Python V1 from the frozen metadata and
+embeddings with a parameter grid, choose the best run on validation MCC, and publish it locally to
+the registry folder:
+
+```powershell
+python -m scripts.training.train_v1 --config .\path\to\v1_config.json --grid '{"max_depth":[3,5],"learning_rate":[0.03,0.07]}' --publish
 ```
 
-```python
-# shield_core/models/v1.py
-def load(entry, artifact_dir):  # signature of every loader: (ModelEntry, Path) -> Model
-    ...  # return an object with .version and .predict(code, language) -> Result
-```
+Every training run is saved under `model_artifacts/train_runs/`, including XGBoost models,
+configuration, metrics and calibration data. The grid writes `v1_grid_comparison.csv`; `--publish`
+copies the selected run to `model_artifacts/v1/`. Upload `model_artifacts/shield-v1.zip` as the
+`shield-v1.zip` asset on GitHub Release tag `v1`. Teammates fetch it with
+`python -m shield_core.models.install --tag v1` after pulling the installer source.
 
-```python
-# shield_core/models/registry.py  (the KINDS map)
-KINDS = {"stub": _load_stub, "tfidf_xgb": "shield_core.models.v1:load"}  # a string = lazy import
-# or, from your own code before the first get_model():  register_kind("tfidf_xgb", "shield_core.models.v1:load")
-```
-
-Nothing else changes: `predict()` and `shield scan` pick it up, and the registry keeps V1 as the automatic fallback.
-Languages not listed in any entry keep getting the built-in stub.
 
 ### 16.3 Add a fix template
 
@@ -1434,10 +1444,10 @@ Honest list, so nobody is surprised. Each item names the plan task that closes i
 
 | # | Gap | Where | Closed by |
 | :-: | --- | --- | --- |
-| 1 | `shield scan` always answers "not vulnerable" (stub model). | `models/models.yaml` | save V1 + register a kind (W2-P3-01, W2-P4-01) |
+| 1 | V1 binary metrics are modest (test MCC 0.358; recall 30.6% at the selected threshold) and CWE macro-F1 is low (0.064). | `model_artifacts/v1/metrics.json` | treat CWE outputs as experimental; improve with more data/experiments |
 | 2 | `scan_repo` and `suggest_fix` are stubs; fix templates and verification are not wired into `suggest_fix`. | `interface.py` | W3-P4-02, W4-P4-02 |
 | 3 | `scripts/data_audit/split_qa.py` is an **empty file**; the split QA tool and its CI test do not exist yet. | `scripts/` | W2-P5-04 |
-| 4 | `train_v1.py`: model saving, `joblib` dump and MLflow logging are commented out. (Its manifest path and output folder were corrected in the layout refactor: it now reads `docs/datasets/audits/dataset_manifest_v0.json` and writes `model_artifacts/train_runs/`.) | `scripts/training/train_v1.py` | W2-P3-01 |
+| 4 | The CodeBERT pretrained weights need to be cached or downloaded on first inference; the XGBoost model files are distributed in the V1 release bundle. | `model_artifacts/v1/`, Hugging Face cache | provide pretrained weights for offline installs |
 | 5 | `shield_core/eval/metrics.py` gives weighted aggregates only (no per-CWE / per-language / multi-label). | `shield_core/eval/` | W2-P3-03 |
 | 6 | No batch graph extraction yet; the converter to PyG is a script, not a library module; graph schema is `0.1-draft`. | `extraction/`, `scripts/graphs/graphml_to_pyg.py` | W2-P1-02, W2-P2-01 |
 | 7 | **364 CVE ids cross splits**; CVE-level grouping is not enforced. | manifest `diagnostics` | W2-P1-03 |
@@ -1449,7 +1459,7 @@ Honest list, so nobody is surprised. Each item names the plan task that closes i
 
 ### What comes next (Gate G2 checklist, from the plan)
 
-- [ ] `shield scan file.py` returns a **real** V1 prediction with CWE and confidence
+- [x] `shield scan file.py` returns a V1 prediction with confidence; CWE is returned when the binary head predicts vulnerable
 - [ ] Per-CWE and per-language metrics on the frozen leakage-safe split, with split QA green and group counts
 - [ ] Graph cache built for the training subset of Python and C/C++
 - [ ] Dataset license note, label-noise hand-check, Joern graph-quality triage recorded
@@ -1622,6 +1632,6 @@ cached graphs are invalidated automatically.
 <div align="center">
 
 *SHIELD · Semantic and Hierarchical Inference for Exploits and Logic Detection*
-*Plan v1.1 · schema 1.2 · interface 1.0 · Joern 4.0.647*
+*Plan v1.2 · schema 1.2 · interface 1.0 · Joern 4.0.647*
 
 </div>

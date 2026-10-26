@@ -239,9 +239,8 @@ def _load_stub(entry: ModelEntry, artifact_dir: Path) -> Model:
 
 # A kind maps to a loader function, or to "package.module:function", which is imported only
 # when a model of that kind is loaded, so heavy libraries (xgboost, torch) are not imported
-# at startup. Day 5: add one line here for the real V1, for example
-#     "xgboost_codebert": "shield_core.models.v1:load",
-KINDS: dict[str, Loader | str] = {"stub": _load_stub}
+# at startup. "v1" = windowed CodeBERT embeddings + calibrated XGBoost binary/CWE heads.
+KINDS: dict[str, Loader | str] = {"stub": _load_stub, "v1": "shield_core.models.v1:load"}
 
 
 def register_kind(kind: str, loader: Loader | str) -> None:
