@@ -32,7 +32,7 @@ tracking = ["mlflow", "wandb"]
 gnn = ["torch_geometric>=2.8"]
 
 [tool.setuptools.packages.find]
-include = ["shield_core*"]
+include = ["shield_core*", "scripts*"]
 
 [tool.setuptools.package-data]
 "shield_core.languages" = ["*.yaml"]
@@ -44,6 +44,7 @@ pythonpath = ["."]
 
 [project.scripts]
 shield = "shield_core.cli:main"
+shield-model-install = "shield_core.models.install:main"
 
 [tool.ruff]
 line-length = 100

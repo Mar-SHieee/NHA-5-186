@@ -74,10 +74,13 @@ def put_artifact(tmp_path, name="v2/model.bin", data=b"weights"):
 # ------------------------------------------------------------------ choosing a model
 
 
-def test_shipped_config_gives_the_stub_for_every_enabled_language():
-    reg = ModelRegistry(DEFAULT_CONFIG)
-    for name in ("python", "cpp"):
-        assert reg.get_model(name).version == "stub"
+def test_shipped_config_uses_v1_for_python_with_stub_fallback():
+    config = load_config(DEFAULT_CONFIG)
+    assert config.default == "v1"
+    assert config.models["v1"].kind == "v1"
+    assert config.models["v1"].languages == ("python",)
+    assert config.fallback == "stub-v0"
+    assert ModelRegistry(DEFAULT_CONFIG).get_model("cpp").version == "stub"
 
 
 def test_default_model_is_used_when_it_loads(tmp_path):
@@ -296,10 +299,11 @@ def test_the_shipped_config_is_valid():
 # ------------------------------------------------------------------ wiring into predict()
 
 
-def test_predict_returns_the_stub_by_default():
+def test_predict_uses_the_registry_selected_model(monkeypatch):
+    monkeypatch.setattr(interface.model_registry, "get_model", lambda language: FakeModel("v1"))
     result = interface.predict("x = 1", "python")
-    assert result.model_version == "stub"
-    assert result.vulnerable is False
+    assert result.model_version == "v1"
+    assert result.vulnerable is True
 
 
 def test_predict_uses_the_registry_and_stamps_the_model_version(monkeypatch):
