@@ -180,13 +180,13 @@ Branch: `w2-p2-extraction-benchmark`. Commits and PR title start with `W2-P2-05:
 ## 5. STATE (update after every step)
 
 ```
-current_phase:      Phase 3 (runner)
-last_ticked_step:   3.7
-in_progress:        3.8 (Docker smoke test tests/spikes/test_benchmark_docker_smoke.py)
+current_phase:      Phase 5 (minimum run)
+last_ticked_step:   4.4
+in_progress:        Phase 5 minimum benchmark run; Phase 3 dry-run gate and Phase 4 report generator complete
 branch:             w2-p2-extraction-benchmark
 machine:            Windows, 24 logical CPUs, 16 GB RAM (16,907,100,160 B); Docker Desktop (WSL2, no .wslconfig = defaults) sees 24 CPUs and 8,188,317,696 B (~7.6 GiB)
 repo location:      C:\Users\eyada\OneDrive\Desktop\SHIELD  <-- INSIDE OneDrive (see R9: benchmark work dirs must be outside it)
-baseline:           ruff clean, 184 files formatted, pytest 697 passed + 1 skipped (151 s); after Phase 1: tests/spikes = 52 passed; after 2.2: 67 passed; after 3.2: 97 passed; after 3.3: 105 passed + 1 skipped on Eyad's Windows; after 3.4 code: 127 passed here; after 3.5: tests/spikes 139 passed + 1 skipped on Eyad's Windows; after 3.6: 148 passed + 1 skipped; after 3.7: 170 passed + 1 skipped
+baseline:           ruff clean, 184 files formatted, pytest 697 passed + 1 skipped (151 s); after Phase 1: tests/spikes = 52 passed; after 2.2: 67 passed; after 3.2: 97 passed; after 3.3: 105 passed + 1 skipped on Eyad's Windows; after 3.4 code: 127 passed here; after 3.5: tests/spikes 139 passed + 1 skipped on Eyad's Windows; after 3.6: 148 passed + 1 skipped; after 3.7: 170 passed + 1 skipped; after 3.8/3.9 on Eyad's Windows: tests/spikes 171 (smoke test PASSED against real Docker, 10.4 s), whole suite 803 passed + 2 skipped (194 s), ruff check clean, ruff format reformatted 3 files (the repo copy is now the source of truth)
 docker image:       shield-joern:latest, id 51394b312f9a, 8.49 GB disk
 probes:             cgroup v2 works (/sys/fs/cgroup/memory.peak) -> peak_method = cgroup_v2; JAVA_OPTS reaches the container env (-Xmx512m printed);
                     Joern's own banner says the frontend (pysrc2cpg / c2cpg) runs as a SEPARATE process with -J-Xmx4096m -> JAVA_OPTS may NOT cap it (to verify in Phase 5)
@@ -355,8 +355,8 @@ Checklist:
 - [x] 3.5 Implement variant A (wrapper around `JoernExtractor`) and run 3 samples by hand.
 - [x] 3.6 Implement variant C and run a batch of 5 Python and 5 C files by hand; confirm one `export.xml` per batch exists.
 - [x] 3.7 Implement workers (A threads; B/C shards), `--resume`, `--dry-run`, `--limit`.
-- [ ] 3.8 Docker smoke test (skipped when `shutil.which("docker")` is `None` or the image is missing): variant B on `tests/fixtures/joern/calls.py`, assert one ok sample and a numeric peak.
-- [ ] 3.9 `ruff check . && ruff format .`, `pytest -q` (whole suite) green; commit: `W2-P2-05: benchmark runner`.
+- [x] 3.8 Docker smoke test (skipped when `shutil.which("docker")` is `None` or the image is missing): variant B on `tests/fixtures/joern/calls.py`, assert one ok sample and a numeric peak.
+- [x] 3.9 `ruff check . && ruff format .`, `pytest -q` (whole suite) green; committed as `1affacf W2-P2-05: benchmark runner`.
 - **REVIEW GATE 3:** run `python -m scripts.spikes.joern.benchmark_extraction --phase all --dry-run` and show the run list and estimate.
 
 ### Phase 4: Report generator (≈ 60 min)
@@ -372,10 +372,10 @@ Behaviour:
 
 Checklist:
 
-- [ ] 4.1 Tests first on a **synthetic** `results.csv`: aggregation (median over reps, ignores `rep=0`), speed-up and efficiency formulas, projection table values, markers replaced idempotently (run twice → identical file), text outside markers preserved, missing optional experiments render as "not run".
-- [ ] 4.2 Implement aggregation + rendering + marker replacement.
-- [ ] 4.3 Implement scenario counts: read real parquet when present (vulnerable rows per language, total rows per language), else print the plan fallback **labelled as fallback**.
-- [ ] 4.4 `pytest tests/spikes -q`; commit: `W2-P2-05: benchmark report generator`.
+- [x] 4.1 Tests first on a **synthetic** `results.csv`: aggregation (median over reps, ignores `rep=0`), speed-up and efficiency formulas, projection table values, markers replaced idempotently (run twice → identical file), text outside markers preserved, missing optional experiments render as "not run".
+- [x] 4.2 Implement aggregation + rendering + marker replacement.
+- [x] 4.3 Implement scenario counts: read real parquet when present (vulnerable rows per language, total rows per language), else print the plan fallback **labelled as fallback**.
+- [x] 4.4 `pytest tests/spikes -q`; 109 passed, 2 skipped; commit: `W2-P2-05: benchmark report generator`.
 - **REVIEW GATE 4.**
 
 ### Phase 5: MINIMUM RUN and Day-2 hand-off to P1 (≈ 30 min work + ≈ 60 min machine)
@@ -578,6 +578,10 @@ sequenceDiagram
 2026-10-26  Step 3.5 hand run passed (A on 1 python + 1 c + 1 cpp sample, all ok; 8.89/23.5/10.3 s without warm-up). run_variant_a + 5 tests already in place. Ticked.
 2026-10-26  Step 3.6: run_variant_c (+ RunOutcome.batch_graphs, --batch-sizes, C in run_variants) + 9 tests; hand run on Docker 5 python/c/cpp in one batch each: all ok, peaks 458/294/268 MiB. Ticked. 148 green.
 2026-10-26  Step 3.7: workers (run_variant_a threads, run_sharded/merge_outcomes for B/C), _run_grid, run_workers, pick_best_config, --resume, --dry-run (plan_runs/format_plan), phases workers/scale/all + 22 tests. Hand run on Docker ok, resume skips, no stray containers. Ticked. 170 green.
+2026-10-26  Step 3.8: tests/spikes/test_benchmark_docker_smoke.py (variant B on calls.py; skips without docker/image). PASSED on Eyad's Docker. Ticked.
+2026-10-26  Step 3.9 checks: ruff check clean, ruff format touched 3 files, pytest -q 803 passed + 2 skipped; confirmed commit `1affacf W2-P2-05: benchmark runner`.
+2026-10-27  REVIEW GATE 3 dry-run: 131 planned runs, rough estimate 3.1 h; no Docker commands executed.
+2026-10-27  Phase 4 done (4.1-4.4): benchmark_report.py + synthetic tests, parquet scenario counts, report and summary generated; tests/spikes 109 passed, 2 skipped; Ruff clean.
 ```
 
 ---
