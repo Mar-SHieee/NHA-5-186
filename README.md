@@ -125,7 +125,7 @@ model registry falls back to V1 automatically.*
 | | V1 training (`scripts/training/train_v1.py`) | 🟡 | Trains and evaluates; model saving and MLflow logging are still commented out; not yet registered in `models.yaml` |
 | | V2 (AST/code-metric features) | ⬜ | Needs tree-sitter utilities (W2-P5-02) |
 | | V3 GNN, V4 fusion | ⬜ | Only a toy GNN on MUTAG (`scripts/tutorials/pyg/`) |
-| **Embeddings** | `CodeBERTEmbedder` (windowed, fp16, disk cache) | ✅ | |
+| **Embeddings** | `CodeBERTEmbedder` (batched, fp16 on GPU, 512-token truncation, in-memory results) | ✅ | No disk cache; long functions are windowed by `scripts/embeddings/long_embedding.py` |
 | | `CPGNodeEmbedder` (node text → vector) | 🟡 | In-memory cache only; no disk cache yet |
 | **Data** | Loaders for 5 sources | ✅ | MegaVul, Big-Vul, CVEfixes C/C++, CVEfixes Python, Zenodo Python |
 | | Unified schema 1.2 (10 columns) | ✅ | Adds `date` and `cve` to the original 8 |
@@ -400,7 +400,7 @@ SHIELD/
 ├── 💾 data/
 │   ├── raw/                      ← downloaded datasets (CVEfixes, MegaVul, Big-Vul, Zenodo)
 │   ├── interim/                  ← unified-schema parquet, deduped files, splits/
-│   └── cache/                    ← graph cache (data/cache/graphs) and embedding cache
+│   └── cache/                    ← graph cache (data/cache/graphs); `CodeBERTEmbedder` creates the folder but no longer writes to it
 ├── 🗃️ model_artifacts/           ← model files the registry loads (override: SHIELD_MODELS_DIR)
 │   └── train_runs/               ← output of scripts/training/train_v1.py
 └── 📈 mlruns/ · wandb/           ← experiment tracking
@@ -524,7 +524,7 @@ SHIELD/
 | --- | --- | --- | --- |
 | `models.yaml` | Model catalogue: `default`, `fallback`, and entries `{version, kind, languages, path?, sha256?, options?}`. Today: `v1`, kind `stub`. | — | — |
 | `registry.py` | Reads `models.yaml`, picks a model: default → fallback (warning logged) → built-in stub → error. Verifies optional `sha256`. New model *kinds* are registered with `register_kind` (lazy import, so torch/xgboost load only when needed). Env overrides: `SHIELD_MODELS_CONFIG`, `SHIELD_MODELS_DIR`. | `get_model(language, version=None)` | object with `.predict(code, language)` and `.version` |
-| `embeddings/embedder.py` | `CodeBERTEmbedder`: frozen `microsoft/codebert-base`, fp16 on GPU, batch inference, on-disk cache keyed by `sha256(code)`. | list of code strings | one tensor per string (or `None`) |
+| `embeddings/embedder.py` | `CodeBERTEmbedder`: frozen `microsoft/codebert-base`, fp16 on GPU (CPU otherwise), batch inference (default 16) with a `tqdm` progress bar, mean-pooled over the attention mask, truncated at 512 tokens. Results stay in memory only: there is no disk cache (`cache_dir` is created but unused). Empty or non-string inputs return `None`. | list of code strings | one tensor per string (or `None`) |
 | `embeddings/node_embeddings.py` | `CPGNodeEmbedder`: frozen fp16 CodeBERT embeds a node's code text; in-memory cache by string hash; counts requests/hits. | node text | vector |
 | `fix/templates/__init__.py` | `TEMPLATES` map `{sql_parameterize, command_argv, path_confine}` and `get_template(name)`. | template name | function `(code, context="") → TemplateResult` |
 | `fix/templates/base.py` | `TemplateResult(applied, fixed_code, reason, required_imports)`, `refuse()`, `finalize()` (a template never returns code that does not parse). | — | — |
