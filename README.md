@@ -1443,8 +1443,7 @@ Honest list, so nobody is surprised. Each item names the plan task that closes i
 | 7 | **364 CVE ids cross splits**; CVE-level grouping is not enforced. | manifest `diagnostics` | W2-P1-03 |
 | 8 | Python is only ≈ 1 % of rows; per-CWE Python claims are fragile. Class imbalance ≈ 6 % positives. | data | report group counts; D39 negatives |
 | 9 | No license/source note per dataset. | `docs/` | W2-P1-04 |
-| 10 | `SHIELD_PLAN.md` is linked everywhere but is not in the repo copy; `docs/graphs/pyg_setup.md` has stale lines. | repo root, `docs/` | W2-P5-05 |
-| 11 | `CPGNodeEmbedder` keeps its cache in memory only. | `embeddings/node_embeddings.py` | W2-P3-04 |
+| 10 | `docs/graphs/pyg_setup.md` has stale lines. | `docs/` | W2-P5-05 || 11 | `CPGNodeEmbedder` keeps its cache in memory only. | `embeddings/node_embeddings.py` | W2-P3-04 |
 | 12 | C++ cross-function taint is not supported by Joern's default call resolution; claims are limited to Python and C (decision D28). | `taint/`, docs | by design |
 | 13 | `sample1/ … sample5/` scratch folders at the repo root. | repo root | add to `.gitignore` or delete |
 
