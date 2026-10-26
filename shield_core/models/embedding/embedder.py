@@ -2,6 +2,7 @@ import hashlib
 import os
 
 import torch
+from tqdm import tqdm  # Added tqdm
 from transformers import AutoModel, AutoTokenizer
 
 
@@ -25,6 +26,8 @@ class CodeBERTEmbedder:
         self.model.eval()
 
         self.cache_dir = cache_dir
+        # We can keep this so it doesn't break other scripts,
+        # but we won't actually save individual files anymore.
         os.makedirs(self.cache_dir, exist_ok=True)
 
         self.max_tokens = max_tokens
@@ -45,31 +48,20 @@ class CodeBERTEmbedder:
             raise ValueError("batch_size must be positive.")
 
         results = [None] * len(code_snippets)
-        missing_texts = []
-        missing_indices = []
+        valid_texts = []
+        valid_indices = []
 
+        # 1. Filter out empty strings but skip the disk checking
         for index, text in enumerate(code_snippets):
             if not isinstance(text, str) or not text.strip():
                 continue
+            valid_texts.append(text)
+            valid_indices.append(index)
 
-            cache_path = os.path.join(
-                self.cache_dir,
-                f"{self.get_hash(text)}.pt",
-            )
-
-            if os.path.exists(cache_path):
-                results[index] = torch.load(
-                    cache_path,
-                    map_location="cpu",
-                    weights_only=True,
-                )
-            else:
-                missing_texts.append(text)
-                missing_indices.append(index)
-
-        for start in range(0, len(missing_texts), batch_size):
-            batch_texts = missing_texts[start : start + batch_size]
-            batch_indices = missing_indices[start : start + batch_size]
+        # 2. Batch process strictly in memory, wrapped with tqdm for progress tracking
+        for start in tqdm(range(0, len(valid_texts), batch_size), desc="Embedding batches"):
+            batch_texts = valid_texts[start : start + batch_size]
+            batch_indices = valid_indices[start : start + batch_size]
 
             inputs = self.tokenizer(
                 batch_texts,
@@ -91,18 +83,8 @@ class CodeBERTEmbedder:
 
                 batch_embeddings = (summed_embeddings / token_counts).float().cpu()
 
-            for index, text, embedding in zip(
-                batch_indices,
-                batch_texts,
-                batch_embeddings,
-                strict=True,
-            ):
-                cache_path = os.path.join(
-                    self.cache_dir,
-                    f"{self.get_hash(text)}.pt",
-                )
-
-                torch.save(embedding, cache_path)
-                results[index] = embedding
+            # Store the result in memory (no disk saving here!)
+            for i, idx in enumerate(batch_indices):
+                results[idx] = batch_embeddings[i]
 
         return results
