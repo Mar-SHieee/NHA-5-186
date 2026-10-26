@@ -2,7 +2,7 @@
 
 Each check takes the PATCHED code and returns True when the cheap structural property that the
 class's verdict depends on holds. They never run code and never raise: code that does not parse
-is simply False. The names are the `pattern_check` values in languages/<language>.yaml.
+is simply False. The names are the `pattern_check` values in shield_core/languages/<language>.yaml.
 
     execute_literal_sql          CWE-89  every execute() call has a string literal as its SQL
     argv_list_no_shell           CWE-78  subprocess.run gets a list literal, no shell anywhere

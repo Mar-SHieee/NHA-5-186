@@ -4,7 +4,7 @@ Why a cache: Joern takes seconds per file and repo scans / bulk extraction (W2-P
 the same code constantly. Why these key parts:
   * sha256(code)    -> same code, same graph
   * extractor ver.  -> a new Joern release may produce a different graph
-  * schema version  -> we changed what a graph contains (docs/graph_schema.md)
+  * schema version  -> we changed what a graph contains (docs/graphs/graph_schema.md)
   * language        -> same text can be parsed by different frontends
   * extension       -> .c and .cpp files are parsed by different Joern grammars
 Any part changing gives a different path, so stale graphs are never served.

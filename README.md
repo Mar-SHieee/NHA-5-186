@@ -94,7 +94,7 @@ model registry falls back to V1 automatically.*
   backend, Angular app and VS Code extension are thin wrappers added at the end (plan D18).
 * **One frozen seam.** Everything the outside world sees goes through `shield_core/interface.py`
   (`INTERFACE_VERSION = "1.0"`). Changing it needs a Decisions Log row and a version bump (plan D34).
-* **Languages are plug-ins.** A language is one YAML file in `languages/`. No other code may hard-code a
+* **Languages are plug-ins.** A language is one YAML file in `shield_core/languages/`. No other code may hard-code a
   language name; a test enforces this (plan D24).
 * **No leakage, no vanity metrics.** Splits are by *project/commit group*, never random rows. Final
   metrics are blocked until split QA passes (plan D16, D33).
@@ -120,26 +120,26 @@ model registry falls back to V1 automatically.*
 | **Languages** | Registry + `python.yaml`, `cpp.yaml` | ✅ | Python and C/C++ enabled |
 | | `java.yaml` | ⬜ | Present but **disabled** (decision D36) |
 | **Models** | Model registry (`models.yaml`, fallback to V1) | ✅ | Only kind registered today: `stub` |
-| | V1 training (`scripts/train_v1.py`) | 🟡 | Trains and evaluates; model saving and MLflow logging are still commented out; not yet registered in `models.yaml` |
+| | V1 training (`scripts/training/train_v1.py`) | 🟡 | Trains and evaluates; model saving and MLflow logging are still commented out; not yet registered in `models.yaml` |
 | | V2 (AST/code-metric features) | ⬜ | Needs tree-sitter utilities (W2-P5-02) |
-| | V3 GNN, V4 fusion | ⬜ | Only a toy GNN on MUTAG (`scripts/pyg-gnn/`) |
+| | V3 GNN, V4 fusion | ⬜ | Only a toy GNN on MUTAG (`scripts/tutorials/pyg/`) |
 | **Embeddings** | `CodeBERTEmbedder` (windowed, fp16, disk cache) | ✅ | |
 | | `CPGNodeEmbedder` (node text → vector) | 🟡 | In-memory cache only; no disk cache yet |
 | **Data** | Loaders for 5 sources | ✅ | MegaVul, Big-Vul, CVEfixes C/C++, CVEfixes Python, Zenodo Python |
 | | Unified schema 1.2 (10 columns) | ✅ | Adds `date` and `cve` to the original 8 |
 | | Dedupe, merge, project-name normalization | ✅ | |
 | | Group-safe splits (`splits.py`, manifest v0.2) | ✅ | train / val / test / project-disjoint holdout |
-| | Split QA tool (`scripts/split_qa.py`) | ⬜ | File exists but is **empty** (W2-P5-04) |
+| | Split QA tool (`scripts/data_audit/split_qa.py`) | ⬜ | File exists but is **empty** (W2-P5-04) |
 | **Graphs** | `GraphExtractor` + Joern + cache | ✅ | Library only |
 | | Batch extraction over the training subset | ⬜ | W2-P1-02 |
-| | CPG → PyG converter | 🟡 | `scripts/graphml_to_pyg.py` (not yet in `shield_core/`) |
+| | CPG → PyG converter | 🟡 | `scripts/graphs/graphml_to_pyg.py` (not yet in `shield_core/`) |
 | **Taint** | Query generator from YAML | ✅ | `shield_core/taint/joern_queries.py` |
-| | Taint spike driver | ✅ | `scripts/taint/run_taint_spike.py` |
+| | Taint spike driver | ✅ | `scripts/spikes/taint/run_taint_spike.py` |
 | | Taint as model features | ⬜ | Week 3 |
 | **Fix + verify** | Python templates: CWE-89, CWE-78, CWE-22 | ✅ | Standalone, heavily tested |
 | | Verification: evidence + pattern checks | ✅ | Syntax/pattern/test logic and the D35 verdict rule |
 | | Re-detection hook, sandboxed test runner | ⬜ | Week 3 |
-| **Evaluation** | `eval/metrics.py` | 🟡 | Weighted aggregate P/R/F1 + confusion matrix only; per-CWE metrics owed (W2-P3-03) |
+| **Evaluation** | `shield_core/eval/metrics.py` | 🟡 | Weighted aggregate P/R/F1 + confusion matrix only; per-CWE metrics owed (W2-P3-03) |
 | | Run tracking (`tracking.py`) | ✅ | MLflow / W&B / console, seeds, dataset hash |
 | **Infra** | Docker image with pinned Joern | ✅ | |
 | | CI (ruff + format + pytest) | ✅ | |
@@ -219,7 +219,7 @@ returning real predictions with **no code change** in the CLI or the interface.
 ### Try it: generate and verify a fix (library level, not yet wired to the CLI)
 
 ```python
-from shield_core.models.fixgen import get_template
+from shield_core.fix.templates import get_template
 from shield_core.verify.pattern_checks import get_pattern_check
 from shield_core.verify.evidence import Rating, Checks, make_report
 
@@ -247,10 +247,10 @@ print(report.verdict, "|", report.notes)
 ### Try it: rebuild the dataset (needs the raw data in `data/raw/`)
 
 ```bash
-python -m shield_core.datasets.dedupe        # loaders' parquet  ->  *_deduped.parquet + docs/dedupe_report.md
-python -m shield_core.datasets.merge         # *_deduped.parquet ->  merged_datasets.parquet
-python -m shield_core.datasets.splits        # merged            ->  train/val/test/holdout + manifest
-python scripts/acceptance_check.py           # audit report  ->  docs/dataset_audit.md
+python -m shield_core.datasets.pipeline.dedupe        # loaders' parquet  ->  *_deduped.parquet + docs/datasets/audits/dedupe_report.md
+python -m shield_core.datasets.pipeline.merge         # *_deduped.parquet ->  merged_datasets.parquet
+python -m shield_core.datasets.pipeline.splits        # merged            ->  train/val/test/holdout + manifest
+python scripts/data_audit/acceptance_check.py           # audit report  ->  docs/datasets/audits/dataset_audit.md
 ```
 
 ---
@@ -266,7 +266,7 @@ flowchart TB
     end
 
     subgraph PRE["🔧 Preparation"]
-        LANG["Language registry<br/>languages/*.yaml"]:::done
+        LANG["Language registry<br/>shield_core/languages/*.yaml"]:::done
         TS["tree-sitter<br/>function boundaries"]:::plan
         GX["GraphExtractor + Joern<br/>code property graph"]:::done
         TAINT["Taint queries<br/>source → sink paths"]:::done
@@ -320,7 +320,7 @@ flowchart TB
 ```mermaid
 flowchart LR
     A["shield scan x.py"] --> B["cli.py<br/>detect language"]
-    B --> C["languages/registry.py<br/>is it enabled?"]
+    B --> C["shield_core/languages/registry.py<br/>is it enabled?"]
     C --> D["interface.predict"]
     D --> E["models/registry.py<br/>get_model"]
     E --> F["models.yaml<br/>default: v1"]
@@ -356,7 +356,7 @@ SHIELD/
 │   ├── requirements-docker.txt   ← pinned Python packages inside the image
 │   └── smoke/                    ← smoke test: parse one sample per language
 │
-├── 🌐 languages/                 ← LANGUAGE PLUG-INS (one YAML per language)
+├── 🌐 shield_core/languages/                 ← LANGUAGE PLUG-INS (one YAML per language)
 │   ├── registry.py               ← loads + validates the YAML files, answers "what languages exist?"
 │   ├── python.yaml               ← enabled · 14 CWEs · taint sources/sinks · fix templates
 │   ├── cpp.yaml                  ← enabled · C and C++ · 20 CWEs · taint config
@@ -391,7 +391,7 @@ SHIELD/
 │   │
 │   └── verify/                   ← "is this fix sane?" (syntax · pattern · evidence · verdict)
 │
-├── 📊 eval/                      ← metrics (precision / recall / F1, confusion matrix)
+├── 📊 shield_core/eval/                      ← metrics (precision / recall / F1, confusion matrix)
 │
 ├── 🧪 tests/                     ← 27 test files · ~376 test functions
 │   └── fixtures/
@@ -414,7 +414,7 @@ SHIELD/
 │   ├── raw/                      ← downloaded datasets (CVEfixes, MegaVul, Big-Vul, Zenodo)
 │   ├── interim/                  ← parquet files in the unified schema, deduped files, splits/
 │   └── cache/                    ← graph cache (data/cache/graphs) and embedding cache
-├── 🗃️ artifacts/                 ← output folder of scripts/train_v1.py
+├── 🗃️ artifacts/                 ← output folder of scripts/training/train_v1.py
 ├── 🗃️ model_artifacts/           ← (future) model files the registry loads; override with SHIELD_MODELS_DIR
 └── 📈 mlruns/ · wandb/           ← experiment tracking
 ```
@@ -424,14 +424,14 @@ SHIELD/
 
 | Folder | Responsible for | Does **not** do |
 | --- | --- | --- |
-| `languages/` | Declaring *what a language is*: extensions, Joern frontend, tree-sitter grammar, target CWEs, taint sources/sinks/sanitizers, fix-template metadata. | Contain any detection logic. |
+| `shield_core/languages/` | Declaring *what a language is*: extensions, Joern frontend, tree-sitter grammar, target CWEs, taint sources/sinks/sanitizers, fix-template metadata. | Contain any detection logic. |
 | `shield_core/interface.py`, `cli.py` | The **only** entry points other code and users touch. Stable, versioned. | Know how models, Joern or datasets work internally. |
 | `shield_core/datasets/` | Turning five raw datasets into **one** clean table, then into **leakage-safe** train/val/test/holdout files. | Train anything. |
 | `shield_core/extraction/` | Turning code into a graph (and a graph's nodes into vectors). Caching results. | Decide whether code is vulnerable. |
-| `shield_core/taint/` | Building taint queries from language configuration and parsing Joern's answers. | Run Docker itself (the driver in `scripts/taint/` does). |
+| `shield_core/taint/` | Building taint queries from language configuration and parsing Joern's answers. | Run Docker itself (the driver in `scripts/spikes/taint/` does). |
 | `shield_core/models/` | Selecting and loading models (registry), embedding code (CodeBERT), generating fixes (templates). | Hard-code model versions. |
 | `shield_core/verify/` | Judging a proposed fix: syntax, class-specific pattern, evidence line, PASS/FAIL verdict. | Generate fixes. |
-| `eval/` | Computing metrics from predictions. | Load data or models. |
+| `shield_core/eval/` | Computing metrics from predictions. | Load data or models. |
 | `scripts/` | One-off and repeatable *runs*: audits, spikes, exploration, V1 training. They may import `shield_core`; `shield_core` never imports them. | Hold reusable library logic long-term. |
 | `tests/` | Unit tests plus fixture code for Joern and taint. | |
 | `docker/joern/` | A pinned, reproducible Joern + Java + tree-sitter environment. | |
@@ -448,12 +448,12 @@ SHIELD/
 | --- | --- | --- | :---: |
 | Scan one file from the terminal | `shield_core/` | `cli.py` | ✅ |
 | Call the detector from Python | `shield_core/` | `interface.py` → `predict()` | ✅ |
-| Know which languages are enabled / detect language from a path | `languages/` | `registry.py`, `*.yaml` | ✅ |
+| Know which languages are enabled / detect language from a path | `shield_core/languages/` | `registry.py`, `*.yaml` | ✅ |
 | Choose, load and fall back between models | `shield_core/models/` | `registry.py`, `models.yaml` | ✅ |
-| Embed code with CodeBERT (incl. long functions) | `shield_core/models/embedding/` | `embedder.py` | ✅ |
+| Embed code with CodeBERT (incl. long functions) | `shield_core/embeddings/` | `embedder.py` | ✅ |
 | Embed graph nodes with CodeBERT | `shield_core/extraction/` | `node_embeddings.py` | 🟡 |
 | Train the V1 classifier | `scripts/` | `train_v1.py` | 🟡 |
-| Compute metrics | `eval/` | `metrics.py` | 🟡 |
+| Compute metrics | `shield_core/eval/` | `metrics.py` | 🟡 |
 | Log runs, seeds, dataset hashes | `shield_core/` | `tracking.py` | ✅ |
 | Download / load a dataset into the unified schema | `shield_core/datasets/*_loaders/` | one loader per source | ✅ |
 | Validate the unified schema | `shield_core/datasets/` | `schema.py` | ✅ |
@@ -466,15 +466,15 @@ SHIELD/
 | Turn code into a code property graph | `shield_core/extraction/` | `graph_extractor.py`, `joern_extractor.py` | ✅ |
 | Cache graphs | `shield_core/extraction/` | `cache.py` | ✅ |
 | Convert a graph to PyTorch Geometric | `scripts/` | `graphml_to_pyg.py` | 🟡 |
-| Build and run taint queries | `shield_core/taint/`, `scripts/taint/` | `joern_queries.py`, `run_taint_spike.py` | ✅ |
-| Generate a fix (SQLi, command injection, path traversal) | `shield_core/models/fixgen/` | `sql.py`, `command.py`, `path.py` | ✅ |
+| Build and run taint queries | `shield_core/taint/`, `scripts/spikes/taint/` | `joern_queries.py`, `run_taint_spike.py` | ✅ |
+| Generate a fix (SQLi, command injection, path traversal) | `shield_core/fix/templates/` | `sql.py`, `command.py`, `path.py` | ✅ |
 | Judge a fix | `shield_core/verify/` | `evidence.py`, `pattern_checks.py` | ✅ |
 | Parse and edit Python source safely | `shield_core/verify/` | `pysource.py` | ✅ |
 | Run Joern reproducibly | `docker/joern/` | `Dockerfile` | ✅ |
-| Measure Joern speed / graph quality | `scripts/joern_spike_audit/` | `run_joern_spike.py`, `audit_joern_spike.py` | ✅ |
-| Measure token lengths / long-function policy | `scripts/codebert_embeddings_analysis/` | `token_length_stats.py`, `long_function_analysis.py` | ✅ |
-| Learn PyG / run a toy GNN | `scripts/pyg-gnn/` | `toy_gnn.py` | ✅ |
-| Add a new language | `languages/` | new `<lang>.yaml` ([guide](#161-add-a-language)) | ✅ |
+| Measure Joern speed / graph quality | `scripts/spikes/joern/` | `run_joern_spike.py`, `audit_joern_spike.py` | ✅ |
+| Measure token lengths / long-function policy | `scripts/embeddings/` | `token_length_stats.py`, `long_function_analysis.py` | ✅ |
+| Learn PyG / run a toy GNN | `scripts/tutorials/pyg/` | `toy_gnn.py` | ✅ |
+| Add a new language | `shield_core/languages/` | new `<lang>.yaml` ([guide](#161-add-a-language)) | ✅ |
 | Repo-level scan, aggregation | `shield_core/` | `interface.scan_repo` | 🧱 |
 | GNN (V3), fusion (V4) | `shield_core/models/` | *(not created yet)* | ⬜ |
 | HTTP API / web app / VS Code extension | `api/`, `web/`, `vscode-ext/` | *(not created yet)* | ⬜ |
@@ -493,11 +493,11 @@ SHIELD/
 | `.pre-commit-config.yaml` | Runs lint/format checks locally on each commit. | staged files → pass/fail |
 | `.github/workflows/ci.yml` | On every PR and push to `main`: install, `ruff check`, `ruff format --check`, `pytest`. | repo → green/red |
 
-### 8.2 `languages/`
+### 8.2 `shield_core/languages/`
 
 | File | Purpose | Input | Output |
 | --- | --- | --- | --- |
-| `registry.py` | Loads every `*.yaml`, **validates** it (unknown keys, bad regexes, bad indices are errors), and exposes lookups: `enabled_languages()`, `get()`, `require_enabled()`, `language_for_extension()`, `language_for_path()`. Defines `LanguageSpec`, `SourceSpec`, `SinkSpec`, `FixTemplateSpec`. | `languages/*.yaml` | `LanguageSpec` objects |
+| `registry.py` | Loads every `*.yaml`, **validates** it (unknown keys, bad regexes, bad indices are errors), and exposes lookups: `enabled_languages()`, `get()`, `require_enabled()`, `language_for_extension()`, `language_for_path()`. Defines `LanguageSpec`, `SourceSpec`, `SinkSpec`, `FixTemplateSpec`. | `shield_core/languages/*.yaml` | `LanguageSpec` objects |
 | `python.yaml` | Python: `.py`, frontend `PYTHONSRC`, 14 CWEs, 6 sources, 6 sinks, sanitizers, 3 fix templates with ratings. | — | — |
 | `cpp.yaml` | C and C++: `.cpp .c .h .cc .cxx .hpp`, frontend `NEWC`, tree-sitter C for `.c`, 20 CWEs, 5 sources, 4 sinks, 2 sanitizers (no fix templates yet). | — | — |
 | `java.yaml` | Disabled placeholder. | — | — |
@@ -557,12 +557,12 @@ SHIELD/
 | `python_loaders/zenodo_python_loader.py` | Loads Zenodo record 13870382 (`data_Python.csv`); optional GitHub commit enrichment (`--resolve-commits`, uses `GITHUB_TOKEN`). | `data/raw/zenodo_python/data_Python.csv` | `data/interim/zenodo_python.parquet` + mapping |
 | `cvefixes_convert_db.py` | Downloads the CVEfixes v1.0.8 zip (≈12.7 GB), extracts the dump, builds the SQLite DB. | Zenodo URL | `data/raw/CVEfixes.db` |
 | `project_names.py` | One naming convention, `owner/repo`, from repository URLs. | URL | `owner/repo` or `<NA>` |
-| `project_normalization.py` | Lower-cases, strips `.git`/URL prefixes, applies **learned + manual aliases**, writes alias review reports. | deduped parquet | `docs/project_aliases.json`, `docs/project_*.csv` |
-| `dedupe.py` | Token-normalized code hash (Python and C-style normalizers, layout-insensitive link for Zenodo); one row per hash across datasets (priority: megavul > bigvul > cvefixes_cpp > cvefixes_python > zenodo_python); CWEs/CVEs **unioned**; 0/1 label conflicts **dropped everywhere**. Inputs are never modified. | `data/interim/*.parquet` | `data/interim/<name>_deduped.parquet` + `docs/dedupe_report.md` |
+| `project_normalization.py` | Lower-cases, strips `.git`/URL prefixes, applies **learned + manual aliases**, writes alias review reports. | deduped parquet | `docs/datasets/project_names/project_aliases.json`, `docs/project_*.csv` |
+| `dedupe.py` | Token-normalized code hash (Python and C-style normalizers, layout-insensitive link for Zenodo); one row per hash across datasets (priority: megavul > bigvul > cvefixes_cpp > cvefixes_python > zenodo_python); CWEs/CVEs **unioned**; 0/1 label conflicts **dropped everywhere**. Inputs are never modified. | `data/interim/*.parquet` | `data/interim/<name>_deduped.parquet` + `docs/datasets/audits/dedupe_report.md` |
 | `merge.py` | Merges every `*_deduped.parquet`, checking each against the schema first. | deduped parquet | `data/interim/merged_datasets.parquet` |
-| `splits.py` | **Leakage-safe splitting.** Builds connected components over canonical project **and** commit, assigns whole components to train 70 / val 10 / test 10 / holdout 10 (greedy + local search balancing CWE, size, label), validates no group/commit/project crosses a split. Seed 42. Optional `--d39-patched-negatives`. | `merged_datasets.parquet` | `data/interim/splits/{train,val,test,holdout,assignments}.parquet` + `docs/dataset_manifest_v0.json` |
+| `splits.py` | **Leakage-safe splitting.** Builds connected components over canonical project **and** commit, assigns whole components to train 70 / val 10 / test 10 / holdout 10 (greedy + local search balancing CWE, size, label), validates no group/commit/project crosses a split. Seed 42. Optional `--d39-patched-negatives`. | `merged_datasets.parquet` | `data/interim/splits/{train,val,test,holdout,assignments}.parquet` + `docs/datasets/audits/dataset_manifest_v0.json` |
 
-### 8.8 `eval/`
+### 8.8 `shield_core/eval/`
 
 | File | Purpose | Input | Output |
 | --- | --- | --- | --- |
@@ -573,7 +573,7 @@ SHIELD/
 | Script | Purpose | Input | Output |
 | --- | --- | --- | --- |
 | `train_v1.py` | Trains the V1 baseline for Python: binary vulnerable/not and CWE head; TF-IDF + logistic regression by default, XGBoost and CodeBERT embeddings selectable in `CONFIG`; calibration (isotonic), Brier/AUC/MCC metrics. Saving and MLflow lines are present but commented out. | `data/interim/splits/*.parquet`, manifest, optional `*_embeddings.npy` | metrics printed; `artifacts/<model>_v1_<timestamp>/calibration_plot_data.csv` (model files not saved yet) |
-| `acceptance_check.py` | Read-only dataset audit (schema, empty code, duplicate hashes, language × CWE counts). | `data/interim/*_deduped.parquet` | `docs/dataset_audit.md` |
+| `acceptance_check.py` | Read-only dataset audit (schema, empty code, duplicate hashes, language × CWE counts). | `data/interim/*_deduped.parquet` | `docs/datasets/audits/dataset_audit.md` |
 | `check_cvefixes_absent_commits.py` | Explains why some CVEfixes commits are missing from function-level data. | raw CVEfixes tables | `docs/cvefixes_*_absent_commits.md` |
 | `explore_bigvul.py`, `explore_cvefixes_cpp.py`, `explore_cvefixes_python.py`, `explore_megavul.py`, `explore_zenodo_python.py` | Dataset exploration reports. | raw/interim data | `docs/*_exploration.md` |
 | `graphml_to_pyg.py` | Joern GraphML → PyG `Data` (12 node types one-hot + 3 taint-flag columns; 6 edge types). | `export.xml` | `Data(x, edge_index, …)` printed |
@@ -581,12 +581,12 @@ SHIELD/
 | `try_extractor.py` | End-to-end try-out of `CachedGraphExtractor(JoernExtractor)`: two calls prove the cache. | a source file + language | timings, node/edge counts, cache stats |
 | `demo_tracking.py` | Demo of the run logger. | `--backend console\|mlflow\|wandb` | a logged run |
 | `split_qa.py` | **Empty placeholder** for the split QA tool (W2-P5-04). | — | — |
-| `codebert_embeddings_analysis/token_length_stats.py` | How many functions exceed 512 tokens, per dataset. | `data/interim/*_deduped.parquet` | statistics (feeds `docs/long_function_policy.md`) |
+| `codebert_embeddings_analysis/token_length_stats.py` | How many functions exceed 512 tokens, per dataset. | `data/interim/*_deduped.parquet` | statistics (feeds `docs/modeling/long_function_policy.md`) |
 | `codebert_embeddings_analysis/long_function_analysis.py` | `apply_truncation_policy`: sliding windows (510 tokens, overlap, optional cap). | code | list of windows |
 | `codebert_embeddings_analysis/long_embedding.py` | Embeds every function in a parquet, mean-pooling windows. | `--data <parquet>` | `<stem>_processed.parquet` + `<stem>_embeddings.npy` (row *i* ↔ row *i*) |
 | `codebert_embeddings_analysis/coverage_check.py`, `sanity_check.py` | Checks that embeddings cover the rows and look sane. | parquet + `.npy` | printed checks |
 | `joern_spike_audit/run_joern_spike.py` | Runs Joern on 20 samples each of Python, C, C++. | `*_samples_20.parquet` | `data/interim/joern_spike_full/`, `joern_spike_results.csv` |
-| `joern_spike_audit/audit_joern_spike.py` | Checks graph quality (CFG/DDG/call edges) of those runs. | spike outputs | `joern_spike_audit.csv`, `docs/joern_spike.md` |
+| `joern_spike_audit/audit_joern_spike.py` | Checks graph quality (CFG/DDG/call edges) of those runs. | spike outputs | `joern_spike_audit.csv`, `docs/graphs/joern_spike.md` |
 | `joern_spike_audit/analyze_joern_performance.py` | Time per sample summary. | results CSV | printed stats |
 | `taint/run_taint_spike.py` | Runs the YAML-generated taint query over `tests/fixtures/taint/` in Docker and compares with each file's `EXPECT:` line (`OK`, `KNOWN-MISS`, `KNOWN-FP`, `NOW-OK`, `UNEXPECTED`). | `--lang python\|cpp` | verdict table, exit code 1 on `UNEXPECTED` |
 | `pyg-gnn/check_env.py`, `lesson*.py`, `toy_gnn.py` | Environment check, PyG tutorials, toy GNN on MUTAG. | — | printed results |
@@ -626,7 +626,7 @@ sequenceDiagram
     autonumber
     actor U as User
     participant CLI as cli.py
-    participant LR as languages/registry.py
+    participant LR as shield_core/languages/registry.py
     participant IF as interface.py
     participant MR as models/registry.py
     participant YML as models.yaml
@@ -665,7 +665,7 @@ sequenceDiagram
     participant SCH as schema.py
     participant PN as project_names.py
     participant DED as dedupe.py
-    participant ACC as scripts/acceptance_check.py
+    participant ACC as scripts/data_audit/acceptance_check.py
     participant PNO as project_normalization.py
     participant MRG as merge.py
     participant SPL as splits.py
@@ -679,15 +679,15 @@ sequenceDiagram
     LDR->>SCH: conform() + validate()
     SCH-->>LDR: schema 1.2 table
     LDR-->>Dev: data/interim/<source>.parquet (+ commit/CVE mapping)
-    Dev->>DED: python -m shield_core.datasets.dedupe
+    Dev->>DED: python -m shield_core.datasets.pipeline.dedupe
     DED->>SCH: read and re-validate
-    DED-->>Dev: <source>_deduped.parquet + docs/dedupe_report.md
+    DED-->>Dev: <source>_deduped.parquet + docs/datasets/audits/dedupe_report.md
     Dev->>ACC: audit the deduped files
-    ACC-->>Dev: docs/dataset_audit.md
-    Dev->>MRG: python -m shield_core.datasets.merge
+    ACC-->>Dev: docs/datasets/audits/dataset_audit.md
+    Dev->>MRG: python -m shield_core.datasets.pipeline.merge
     MRG->>SCH: validate every file
     MRG-->>Dev: merged_datasets.parquet
-    Dev->>SPL: python -m shield_core.datasets.splits
+    Dev->>SPL: python -m shield_core.datasets.pipeline.splits
     SPL->>PNO: canonical project names
     SPL->>SPL: components, assignment, validation
     SPL-->>Dev: splits/{train,val,test,holdout}.parquet + manifest
@@ -698,7 +698,7 @@ sequenceDiagram
 ```mermaid
 sequenceDiagram
     autonumber
-    participant S as scripts/try_extractor.py
+    participant S as scripts/graphs/try_extractor.py
     participant C as CachedGraphExtractor (cache.py)
     participant K as GraphCache (cache.py)
     participant J as JoernExtractor (joern_extractor.py)
@@ -726,8 +726,8 @@ sequenceDiagram
 ```mermaid
 sequenceDiagram
     autonumber
-    participant R as scripts/taint/run_taint_spike.py
-    participant LR as languages/registry.py
+    participant R as scripts/spikes/taint/run_taint_spike.py
+    participant LR as shield_core/languages/registry.py
     participant Q as taint/joern_queries.py
     participant D as Docker + Joern
     participant F as tests/fixtures/taint/*
@@ -772,7 +772,7 @@ sequenceDiagram
 
 ### 9.6 Who imports whom (dependency map)
 
-An arrow `A --> B` means "A imports B". The map shows that **`languages/registry.py` is the root of
+An arrow `A --> B` means "A imports B". The map shows that **`shield_core/languages/registry.py` is the root of
 almost everything** and that `interface.py` is the only thing the outside world needs to know.
 
 ```mermaid
@@ -782,7 +782,7 @@ flowchart LR
         IF["interface.py"]
     end
     subgraph CONFIG["Configuration"]
-        LR["languages/registry.py"]
+        LR["shield_core/languages/registry.py"]
         MR["models/registry.py"]
     end
     subgraph DATA["datasets"]
@@ -877,9 +877,9 @@ flowchart TD
         I5[/"zenodo_python.parquet"/]
     end
 
-    DD[/"*_deduped.parquet<br/>docs/dedupe_report.md"/]
+    DD[/"*_deduped.parquet<br/>docs/datasets/audits/dedupe_report.md"/]
     MG[/"merged_datasets.parquet"/]
-    SP[/"splits/ train · val · test · holdout<br/>assignments.parquet<br/>docs/dataset_manifest_v0.json"/]
+    SP[/"splits/ train · val · test · holdout<br/>assignments.parquet<br/>docs/datasets/audits/dataset_manifest_v0.json"/]
     EM[/"&lt;split&gt;_embeddings.npy<br/>&lt;split&gt;_processed.parquet"/]
     ART[/"artifacts/…/calibration_plot_data.csv<br/>(model files: to be enabled)"/]
 
@@ -902,8 +902,8 @@ flowchart TD
     SP -->|train_v1.py| ART
     EM -.->|optional features| ART
 
-    DD -->|acceptance_check.py| AUD["docs/dataset_audit.md"]
-    I1 & I2 & I3 & I4 & I5 -.->|project_normalization.py| ALI["docs/project_aliases.json<br/>docs/project_*.csv"]
+    DD -->|acceptance_check.py| AUD["docs/datasets/audits/dataset_audit.md"]
+    I1 & I2 & I3 & I4 & I5 -.->|project_normalization.py| ALI["docs/datasets/project_names/project_aliases.json<br/>docs/project_*.csv"]
     ALI -.->|used by| SP
 ```
 
@@ -911,16 +911,16 @@ flowchart TD
 
 | # | Command | Reads | Writes | Next step reads |
 | :-: | --- | --- | --- | --- |
-| 1 | `python -m shield_core.datasets.cvefixes_convert_db` | Zenodo zip | `data/raw/CVEfixes.db` | step 2 |
+| 1 | `python -m shield_core.datasets.cvefixes_build.cvefixes_convert_db` | Zenodo zip | `data/raw/CVEfixes.db` | step 2 |
 | 2 | `…c_cpp_loaders.cvefixes_cpp_tables_extraction` / `…python_loaders.cvefixes_python_tables_extraction` | `CVEfixes.db` | `data/raw/cvefixes_cpp/*.csv`, `data/raw/cvefixes/*.csv` | step 3 |
 | 3 | each loader (`megavul_loader`, `bigvul_loader`, `cvefixes_*_loaders`, `zenodo_python_loader`) | raw files | `data/interim/<source>.parquet` + `<source>_commit_cve_mapping.parquet` | step 4 |
-| 4 | `python -m shield_core.datasets.dedupe` | `data/interim/*.parquet` | `<source>_deduped.parquet`, `docs/dedupe_report.md` | steps 5, 6 |
-| 5 | `python scripts/acceptance_check.py` | `*_deduped.parquet` | `docs/dataset_audit.md` | humans (gate decisions) |
-| 5b | `python -m shield_core.datasets.project_normalization` | `*_deduped.parquet` | `docs/project_aliases.json`, `docs/project_*.csv` | step 7 (`splits.py` prints a warning if the alias file is missing) |
-| 6 | `python -m shield_core.datasets.merge` | `*_deduped.parquet` | `data/interim/merged_datasets.parquet` | step 7 |
-| 7 | `python -m shield_core.datasets.splits` | `merged_datasets.parquet` | `data/interim/splits/*.parquet`, `docs/dataset_manifest_v0.json` | steps 8, 9 |
-| 8 | `python -m scripts.codebert_embeddings_analysis.long_embedding --data <split>.parquet` | one split | `<stem>_processed.parquet`, `<stem>_embeddings.npy` | step 9 (optional features) |
-| 9 | `python scripts/train_v1.py` | `splits/{train,val,test}.parquet` (+ embeddings) | printed metrics, `artifacts/*/calibration_plot_data.csv` | *(next: register the model in `models.yaml`)* |
+| 4 | `python -m shield_core.datasets.pipeline.dedupe` | `data/interim/*.parquet` | `<source>_deduped.parquet`, `docs/datasets/audits/dedupe_report.md` | steps 5, 6 |
+| 5 | `python scripts/data_audit/acceptance_check.py` | `*_deduped.parquet` | `docs/datasets/audits/dataset_audit.md` | humans (gate decisions) |
+| 5b | `python -m shield_core.datasets.pipeline.project_normalization` | `*_deduped.parquet` | `docs/datasets/project_names/project_aliases.json`, `docs/project_*.csv` | step 7 (`splits.py` prints a warning if the alias file is missing) |
+| 6 | `python -m shield_core.datasets.pipeline.merge` | `*_deduped.parquet` | `data/interim/merged_datasets.parquet` | step 7 |
+| 7 | `python -m shield_core.datasets.pipeline.splits` | `merged_datasets.parquet` | `data/interim/splits/*.parquet`, `docs/datasets/audits/dataset_manifest_v0.json` | steps 8, 9 |
+| 8 | `python -m scripts.embeddings.long_embedding --data <split>.parquet` | one split | `<stem>_processed.parquet`, `<stem>_embeddings.npy` | step 9 (optional features) |
+| 9 | `python scripts/training/train_v1.py` | `splits/{train,val,test}.parquet` (+ embeddings) | printed metrics, `artifacts/*/calibration_plot_data.csv` | *(next: register the model in `models.yaml`)* |
 
 ### 10.3 Inputs and outputs of each runtime stage
 
@@ -961,14 +961,14 @@ flowchart LR
 | Merged table | `data/interim/merged_datasets.parquet` | `merge.py` | `splits.py` | parquet |
 | Split files | `data/interim/splits/{train,val,test,holdout}.parquet` | `splits.py` | `long_embedding.py`, `train_v1.py` | parquet |
 | Assignments | `data/interim/splits/assignments.parquet` | `splits.py` | validation, split QA (future) | parquet |
-| Manifest | `docs/dataset_manifest_v0.json` | `splits.py` | reproducibility, run logging | JSON (seed, hash, counts, limitations) |
-| Project aliases | `docs/project_aliases.json` | `project_normalization.py` | `normalize_project_name` (read by `splits.py`) | JSON |
+| Manifest | `docs/datasets/audits/dataset_manifest_v0.json` | `splits.py` | reproducibility, run logging | JSON (seed, hash, counts, limitations) |
+| Project aliases | `docs/datasets/project_names/project_aliases.json` | `project_normalization.py` | `normalize_project_name` (read by `splits.py`) | JSON |
 | Embeddings | `<stem>_embeddings.npy` + `<stem>_processed.parquet` | `long_embedding.py` | `train_v1.py` | `float32` matrix, row *i* ↔ parquet row *i* |
 | Graph cache | `data/cache/graphs/…` | `CachedGraphExtractor` | any `GraphExtractor` user | gzip JSON of `CodeGraph` |
-| Joern export | `<folder>/export/export.xml` | `joern-export` | `parse_graphml`, `graphml_to_pyg.py`, `scripts/explore/*` | GraphML |
+| Joern export | `<folder>/export/export.xml` | `joern-export` | `parse_graphml`, `graphml_to_pyg.py`, `scripts/graphs/inspect_export/*` | GraphML |
 | Model config | `shield_core/models/models.yaml` | humans | `models/registry.py` | YAML |
-| Language config | `languages/*.yaml` | humans | `languages/registry.py` and everything that asks it | YAML |
-| Audit reports | `docs/dataset_audit.md`, `docs/dedupe_report.md`, `docs/joern_spike.md` | audit scripts | humans, gate reviews | Markdown |
+| Language config | `shield_core/languages/*.yaml` | humans | `shield_core/languages/registry.py` and everything that asks it | YAML |
+| Audit reports | `docs/datasets/audits/dataset_audit.md`, `docs/datasets/audits/dedupe_report.md`, `docs/graphs/joern_spike.md` | audit scripts | humans, gate reviews | Markdown |
 
 ---
 
@@ -1057,7 +1057,7 @@ flowchart TD
     SP --> V2{"any group, commit or<br/>project in two splits?"}:::real
     V2 -- yes --> ERR["SplitValidationError<br/>nothing is written"]:::err
     V2 -- no --> W2["write train / val / test / holdout<br/>+ manifest (seed 42, hash, counts)"]:::real
-    W2 --> QA{"split QA tool<br/>(scripts/split_qa.py)"}:::plan
+    W2 --> QA{"split QA tool<br/>(scripts/data_audit/split_qa.py)"}:::plan
     W2 --> LEN["token_length_stats.py<br/>how many functions exceed 512 tokens?"]:::real
     LEN --> EMB["long_embedding.py<br/>510-token windows, mean-pool, CodeBERT fp16"]:::real
     EMB --> TR
@@ -1132,7 +1132,7 @@ flowchart TD
 
 `shield_core/interface.py` is the **only** surface that the CLI, the future FastAPI backend, the web app and
 the VS Code extension depend on. `INTERFACE_VERSION = "1.0"` (signatures and exceptions),
-`SCHEMA_VERSION = "1.0"` (payload fields). If `interface.py` and `docs/api_contract.md` ever disagree,
+`SCHEMA_VERSION = "1.0"` (payload fields). If `interface.py` and `docs/api/api_contract.md` ever disagree,
 **`interface.py` wins**.
 
 ### 12.1 Functions
@@ -1241,7 +1241,7 @@ syntactic pattern check instead, and the evidence line says so.
 
 ## 13. Configuration files
 
-### 13.1 `languages/<name>.yaml` (one per language)
+### 13.1 `shield_core/languages/<name>.yaml` (one per language)
 
 | Key | Meaning |
 | --- | --- |
@@ -1297,7 +1297,7 @@ All five sources are converted into **one schema** (`shield_core/datasets/schema
 | `fixed_code` | string | Patched version when the source has it. |
 | `source` | string | Dataset name. |
 
-### 14.1 What was merged (from `docs/dedupe_report.md` and `docs/dataset_manifest_v0.json`)
+### 14.1 What was merged (from `docs/datasets/audits/dedupe_report.md` and `docs/datasets/audits/dataset_manifest_v0.json`)
 
 | Source (`source` value) | Language | Raw rows | After dedupe | Notes |
 | --- | --- | ---: | ---: | --- |
@@ -1335,7 +1335,7 @@ grouping is not enforced yet.
 
 ```bash
 pytest                      # all tests (≈ 376 test functions in 27 files)
-pytest tests/test_splits.py # one area
+pytest tests/datasets/test_splits.py # one area
 ruff check .                # lint (rules E, F, I, B; line length 100)
 ruff format --check .       # formatting (CI uses --check)
 pre-commit run --all-files  # everything above, as on commit
@@ -1362,9 +1362,9 @@ pre-commit run --all-files  # everything above, as on commit
 
 The design goal is that this is **configuration plus data**, not core code.
 
-1. Copy `languages/java.yaml` (or `cpp.yaml`) to `languages/<new>.yaml`; fill `extensions`, `joern_frontend`, `tree_sitter`.
+1. Copy `shield_core/languages/java.yaml` (or `cpp.yaml`) to `shield_core/languages/<new>.yaml`; fill `extensions`, `joern_frontend`, `tree_sitter`.
 2. Make sure the tree-sitter grammar is in `docker/joern/requirements-docker.txt` and the smoke test covers it.
-3. Run a Joern spike on ≥ 20 samples (`scripts/joern_spike_audit/`); record the verdict in `docs/joern_spike.md`.
+3. Run a Joern spike on ≥ 20 samples (`scripts/spikes/joern/`); record the verdict in `docs/graphs/joern_spike.md`.
 4. Add loaders for its datasets (`shield_core/datasets/<x>_loaders/`) that emit schema 1.2; rerun dedupe, merge, splits.
 5. Set `cwes` from the audit counts; add `sources`, `sinks`, `sanitizers` backed by fixture cases in `tests/fixtures/taint/`.
 6. Train per-language models with the existing scripts; add `fix_templates` for the top CWEs.
@@ -1401,7 +1401,7 @@ Languages not listed in any entry keep getting the built-in stub.
 
 ### 16.3 Add a fix template
 
-1. Write `shield_core/models/fixgen/<name>.py` with `def <name>(code: str, context: str = "") -> TemplateResult`. **Refuse when unsure** (`refuse(reason)`), and end with `finalize(...)`.
+1. Write `shield_core/fix/templates/<name>.py` with `def <name>(code: str, context: str = "") -> TemplateResult`. **Refuse when unsure** (`refuse(reason)`), and end with `finalize(...)`.
 2. Register it in `TEMPLATES` in `fixgen/__init__.py`.
 3. Add a structural check to `PATTERN_CHECKS` in `verify/pattern_checks.py`.
 4. Declare it in the language YAML: `{cwe, rating, template, pattern_check}`; choose the rating from evidence (can re-detection tell fixed from unfixed code?).
@@ -1412,8 +1412,7 @@ Languages not listed in any entry keep getting the built-in stub.
 1. Write `shield_core/datasets/<group>_loaders/<name>_loader.py` that builds a DataFrame and passes it through `schema.conform(df, source)` + `schema.validate(df)`; write `data/interim/<source>.parquet` (and a commit↔CVE mapping if available). Build `project` with `project_from_repo_url`.
 2. Add the source name to `PRIORITY_ORDER` in `dedupe.py` to decide who owns duplicated code.
 3. Run dedupe → project normalization → merge → splits. `merge.py` is generic and needs no edit.
-4. Add a loader test and record source, version and **license** in `docs/data_sources.md` (rule D22).
-
+4. Add a loader test and record source, version and **license** in a dataset sources note (rule D22; the note itself is task W2-P1-04, planned at `data_sources.md` inside `docs/datasets/`).
 ---
 
 ## 17. Known gaps and sharp edges
@@ -1424,14 +1423,14 @@ Honest list, so nobody is surprised. Each item names the plan task that closes i
 | :-: | --- | --- | --- |
 | 1 | `shield scan` always answers "not vulnerable" (stub model). | `models/models.yaml` | save V1 + register a kind (W2-P3-01, W2-P4-01) |
 | 2 | `scan_repo` and `suggest_fix` are stubs; fix templates and verification are not wired into `suggest_fix`. | `interface.py` | W3-P4-02, W4-P4-02 |
-| 3 | `scripts/split_qa.py` is an **empty file**; the split QA tool and its CI test do not exist yet. | `scripts/` | W2-P5-04 |
-| 4 | `train_v1.py`: model saving, `joblib` dump and MLflow logging are commented out. Its `CONFIG["manifest"]` points at `data/interim/dataset_manifest_v0.json`, while `splits.py` writes `docs/dataset_manifest_v0.json`. It only matters once the logging block is enabled. | `scripts/train_v1.py` | W2-P3-01 |
-| 5 | `eval/metrics.py` gives weighted aggregates only (no per-CWE / per-language / multi-label). | `eval/` | W2-P3-03 |
-| 6 | No batch graph extraction yet; the converter to PyG is a script, not a library module; graph schema is `0.1-draft`. | `extraction/`, `scripts/graphml_to_pyg.py` | W2-P1-02, W2-P2-01 |
+| 3 | `scripts/data_audit/split_qa.py` is an **empty file**; the split QA tool and its CI test do not exist yet. | `scripts/` | W2-P5-04 |
+| 4 | `train_v1.py`: model saving, `joblib` dump and MLflow logging are commented out. Its `CONFIG["manifest"]` points at `data/interim/dataset_manifest_v0.json`, while `splits.py` writes `docs/datasets/audits/dataset_manifest_v0.json`. It only matters once the logging block is enabled. | `scripts/training/train_v1.py` | W2-P3-01 |
+| 5 | `shield_core/eval/metrics.py` gives weighted aggregates only (no per-CWE / per-language / multi-label). | `shield_core/eval/` | W2-P3-03 |
+| 6 | No batch graph extraction yet; the converter to PyG is a script, not a library module; graph schema is `0.1-draft`. | `extraction/`, `scripts/graphs/graphml_to_pyg.py` | W2-P1-02, W2-P2-01 |
 | 7 | **364 CVE ids cross splits**; CVE-level grouping is not enforced. | manifest `diagnostics` | W2-P1-03 |
 | 8 | Python is only ≈ 1 % of rows; per-CWE Python claims are fragile. Class imbalance ≈ 6 % positives. | data | report group counts; D39 negatives |
 | 9 | No license/source note per dataset. | `docs/` | W2-P1-04 |
-| 10 | `SHIELD_PLAN.md` is linked everywhere but is not in the repo copy; `docs/long_function_strategy.md` is an empty template; `docs/pyg_setup.md` has stale lines. | repo root, `docs/` | W2-P5-05 |
+| 10 | `SHIELD_PLAN.md` is linked everywhere but is not in the repo copy;the empty `long_function_strategy.md` template was removed in the folder refactor;
 | 11 | `CPGNodeEmbedder` keeps its cache in memory only. | `extraction/node_embeddings.py` | W2-P3-04 |
 | 12 | C++ cross-function taint is not supported by Joern's default call resolution; claims are limited to Python and C (decision D28). | `taint/`, docs | by design |
 | 13 | `sample1/ … sample5/` scratch folders at the repo root. | repo root | add to `.gitignore` or delete |
@@ -1457,7 +1456,7 @@ This README is a living map. It stays useful only if it is updated **in the same
 | changes what a file reads or writes | [§8](#8-file-catalog), [§10](#10-data-flow) (chain table + artifact registry) |
 | adds an import between modules or a new call chain | [§9](#9-sequence-flow-of-the-files) (sequence or dependency map) |
 | turns a stub into a real implementation | flip its badge 🧱 → 🟡 → ✅ in §2 and §7, recolour the node in [§4](#4-architecture-target-vs-what-runs-today) and [§11](#11-activity-diagrams), remove its row from [§17](#17-known-gaps-and-sharp-edges) |
-| changes `interface.py` | [§12](#12-the-public-contract) **and** `docs/api_contract.md` **and** a Decisions Log row in the plan |
+| changes `interface.py` | [§12](#12-the-public-contract) **and** `docs/api/api_contract.md` **and** a Decisions Log row in the plan |
 | adds a dataset or changes the schema | [§14](#14-datasets) |
 
 **Colour convention in all diagrams:** green `#d4f4dd` = working · yellow `#fff4cc` = partial/stub · grey dashed `#ececec` = planned · red `#fde0e0` = error path.
@@ -1478,7 +1477,7 @@ This README is a living map. It stays useful only if it is updated **in the same
 | **Per-dataset exploration** | `bigvul_exploration.md`, `megavul_exploration.md`, `cvefixes_cpp_exploration.md`, `cvefixes_python_exploration.md`, `zenodo_python_exploration.md`, `cvefixes_*_absent_commits.md` |
 | **Project names** | `project_aliases.json`, `project_alias_*.csv`, `project_name_mapping.csv`, `normalized_name_groups.csv`, `project_same_repo_other_owner.csv`, `shared_commit_projects.csv` |
 | **Fixes** | `fix_template_survey.md`, `fix_templates_architecture.md`, `fix_templates_python.md` |
-| **Long functions** | `long_function_policy.md` (510-token windows, mean-pool). `long_function_strategy.md` is an empty template to remove. |
+| **Long functions** | `long_function_policy.md` (510-token windows, mean-pool).+The empty `long_function_strategy.md` template was removed in the folder refactor. |
 
 ---
 

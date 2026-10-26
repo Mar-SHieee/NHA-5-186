@@ -4,7 +4,7 @@ The templates understand code with the stdlib `ast` module but edit it as text: 
 exact source ranges, so comments, formatting and every untouched line stay byte-identical.
 `ast.unparse` is never used on a whole function for that reason.
 
-Two traps handled here (docs/fix_templates_python.md, plan finding F3):
+Two traps handled here (docs/fixes/fix_templates_python.md, plan finding F3):
   * `col_offset` counts UTF-8 BYTES, not characters, so offsets are converted per line.
   * `suggest_fix` gets the text of one function, which is often indented (a method). Such text
     does not parse on its own, so it is parsed again inside an `if True:` wrapper.
