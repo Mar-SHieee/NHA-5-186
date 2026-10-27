@@ -1,5 +1,7 @@
 # W2-P2-05: Extraction benchmark (Joern, per-sample vs batched, 1/2/4 workers)
 
+STATUS: DONE
+
 > **Single source of truth for this task.** Any chat or person can continue from here.
 > Repo path when committed: `docs/project/W2-P2-05_extraction_benchmark_plan.md`.
 > Task id in the team plan: **W2-P2-05** (P2 = Eyad, reviewer P1 = Hatem, URGENT, planned 1.5 h, **Day 2 deadline**).
@@ -173,16 +175,16 @@ README.md, docs/README.md, SHIELD_PLAN.md            # (edit) Section 8
 Language literals (`"python"`, `"c"`, `"cpp"`) may appear in `scripts/` (the spike already does this) but **not** in `shield_core/`
 (a test enforces it). Run `pytest tests/languages/test_registry.py` after editing `paths.py`.
 
-Branch: `w2-p2-extraction-benchmark`. Commits and PR title start with `W2-P2-05:`. Reviewer: P1 (Hatem).
+Branch: `w2-p2-extraction-benchmark`. Commits and PR title start with `W2-P2-05:`. No reviewers requested, per user's instruction.
 
 ---
 
 ## 5. STATE (update after every step)
 
 ```
-current_phase:      Phase 8 REVIEW GATE 8 (awaiting user review)
-last_ticked_step:   8.4
-in_progress:        none; Phase 8 complete, waiting at Review Gate 8
+current_phase:      Phase 9 REVIEW GATE 9 (awaiting user confirmation of PR #51)
+last_ticked_step:   9.4
+in_progress:        none; close-out checks and CI passed; waiting at Review Gate 9 before Phase 10
 branch:             w2-p2-extraction-benchmark
 machine:            Windows, 24 logical CPUs, 16 GB RAM (16,907,100,160 B); Docker Desktop (WSL2, no .wslconfig = defaults) sees 24 CPUs and 8,188,317,696 B (~7.6 GiB)
 repo location:      C:\Users\eyada\OneDrive\Desktop\SHIELD  <-- INSIDE OneDrive (see R9: benchmark work dirs must be outside it)
@@ -218,13 +220,15 @@ Phase 5 minimum-run numbers (current report: `docs/graphs/extraction_report.md`)
                     E2 on Legion Performance Mode: Docker floor median 0.785 s; parse/export/XML medians B — c 2.732/1.123/0.001 s, cpp 3.018/1.446/0.005 s, Python 2.853/1.773/0.014 s; all E2 samples succeeded. Earlier E2 Quiet Mode rows are retained as experiment E2_QUIET and excluded from the report tables.
                     E3 production A median s/sample — c 4.847, cpp 5.049, Python 5.451; B — c 4.454, cpp 4.472, Python 4.901; best fully successful C — c b20 0.486, cpp b20 0.426, Python b50 0.645. C/c/b50 had one Docker error (20/20 failed at rep 2); two other reps succeeded, so the report shows 66.7% success and does not recommend it for c.
                     E4 A workers 1/2/4: c 102.197/56.597/40.904 s, cpp 98.668/56.945/39.433 s, Python 104.315/57.448/39.928 s; 4-worker speed-up 2.50x/2.50x/2.61x, no failures. C b20 at 2 workers: c/cpp/Python throughput 2.420/2.534/1.992 samples/s, peak 290.7/295.4/504.5 MiB; 4 workers gave no consistent throughput gain; no OOM.
-                    Preliminary best-config E4 projections: S1 ~49.7 h median / 89.7 h p95, S2 ~1.7/3.2 h, S3 ~3.5/6.4 h, S4 ~7.0/12.7 h, S5 (Python) 0.63/1.21 h. A baseline projections are also in report. These are spike-60 figures, before scale-up (Phase 6) and fidelity validation (Phase 7).
+                    E5 scale A at 4 workers: C/C++/Python = 0.606/0.558/0.503 samples/s; all 600 samples succeeded (200 per group, six configurations). Fastest successful non-batched E3 B at one worker = 0.225/0.224/0.204 samples/s.
+                    E5 C/b20 memory peaks: C/C++/Python = 851.3/824.5/1871.1 MiB. Batched two-file fidelity failed the exact per-file node/edge type histogram rule for every group, so scale projections use A.
+                    Final S1 projections from E5 A: C 48.58 h, C++ 167.60 h, Python 2.48 h. D38 remains proposed for P1 decision; no decision was made in this benchmark.
                     A c-group w1 = 7.4 s/sample warm vs 23.5 s in 3.5: confirms the 23.5 s was a cold start
                     Phase 7 hint (C group, 3 identical tiny functions of 18n/42e): batch graphs fit  total = shared overhead + per-file part  exactly
                     (1 file 18n/42e, 2 files 25n/64e, 4 files 39n/108e -> 11n/20e shared + 7n/22e per file). Only these near-identical samples; not yet a fidelity claim
 open questions:     B's wall_seconds = docker run only (no file writing, no host XML parse); A includes its tempdir + XML parse, so the report must add xml_parse_seconds to B before comparing with A
 open questions (old): none
-blockers:           none
+blockers:           none; PR #51 is open at https://github.com/nhahub/NHA-5-186/pull/51; CI lint-and-test passed on bc567c8; no reviewers requested per user
 ```
 
 ---
@@ -432,10 +436,10 @@ Steps:
 
 ### Phase 9: Close-out (≈ 30 min)
 
-- [ ] 9.1 Final checks: no stray containers (`docker ps -a --filter name=shield-bench`), `data/interim/joern_benchmark/work/` empty, `git status` clean, nothing under `data/` committed.
-- [ ] 9.2 Push, open PR titled `W2-P2-05: Joern extraction benchmark`, reviewer P1, CI green. PR description: the Section 7.3 message + links to the report.
-- [ ] 9.3 Tick `W2-P2-05` in `SHIELD_PLAN.md` (Section 8.4) with the *Outcome:* line.
-- [ ] 9.4 Mark this plan file `STATUS: DONE` at the top and fill Section 5 with the final numbers.
+- [x] 9.1 Final checks: no stray containers (`docker ps -a --filter name=shield-bench`), `data/interim/joern_benchmark/work/` absent, `git status` clean, nothing under `data/` committed.
+- [x] 9.2 Pushed and opened [PR #51](https://github.com/nhahub/NHA-5-186/pull/51), titled `W2-P2-05: Joern extraction benchmark`; CI `lint-and-test` passed. No reviewers requested, per user. PR description includes findings and report links.
+- [x] 9.3 `W2-P2-05` is ticked in `SHIELD_PLAN.md` (Section 8.4) with the *Outcome:* line.
+- [x] 9.4 Marked this plan `STATUS: DONE` and updated Section 5 with final benchmark and close-out details.
 - **REVIEW GATE 9:** user confirms the PR.
 
 ### Phase 10: Professor explanation (delivered in the chat, after Phase 9)
@@ -597,6 +601,7 @@ sequenceDiagram
 2026-10-27  Phase 6 complete: E5 scale run covered 200 samples per language/config (600 scale samples total), six configurations, all successful; report adds E6 tail stats and E5/E4 comparisons; C/b20 changes >25% in all groups, so projections use E5. tests/spikes 115 passed + 2 skipped; Ruff and git diff --check clean. Stopped at REVIEW GATE 6.
 2026-10-27  REVIEW GATE 6 accepted by Eyad; Phase 7 started. Live two-file-per-group probe: C/C++/Python all not usable by exact per-file node/edge histograms; mismatches C 56.7%/56.7%, C++ 45.6%/30.9%, Python 32.1%/33.2%; unattributable METHOD counts 1/10/4; cross-file CALL edges 0. Report recommendations fall back to non-batched E3 B; E8 projections use E5 A baseline. Variant D feasibility not evaluated. 118 passed + 2 skipped; Ruff clean. Stopped at REVIEW GATE 7.
 2026-10-27  Phase 8 complete: final report and docs reviewed; `pytest --co -q` reported 821 collected; layout 63 passed; Ruff clean; format clean; full suite 819 passed + 2 skipped after rerun with required temp-file rename access. Root README count and benchmark map updated; D38 remains proposed for P1. Stopped at REVIEW GATE 8.
+2026-10-27  Phase 9 complete: final environment/data checks clean; merged current main and pushed `bc567c8`; opened PR #51 with no reviewers per user; GitHub `lint-and-test` passed, no merge conflicts; updated STATUS and final Section 5 numbers. Waiting at REVIEW GATE 9 before Phase 10. P1 note remains a draft.
 ```
 
 ---
