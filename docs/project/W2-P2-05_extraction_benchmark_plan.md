@@ -180,9 +180,9 @@ Branch: `w2-p2-extraction-benchmark`. Commits and PR title start with `W2-P2-05:
 ## 5. STATE (update after every step)
 
 ```
-current_phase:      Phase 7 REVIEW GATE 7 (awaiting user review)
-last_ticked_step:   7.6
-in_progress:        none; Phase 7 complete, waiting at Review Gate 7
+current_phase:      Phase 8 REVIEW GATE 8 (awaiting user review)
+last_ticked_step:   8.4
+in_progress:        none; Phase 8 complete, waiting at Review Gate 8
 branch:             w2-p2-extraction-benchmark
 machine:            Windows, 24 logical CPUs, 16 GB RAM (16,907,100,160 B); Docker Desktop (WSL2, no .wslconfig = defaults) sees 24 CPUs and 8,188,317,696 B (~7.6 GiB)
 repo location:      C:\Users\eyada\OneDrive\Desktop\SHIELD  <-- INSIDE OneDrive (see R9: benchmark work dirs must be outside it)
@@ -399,6 +399,8 @@ Run the decision-grade subset on the **spike 60** only.
 
 User confirmed Phase 5 numbers and asked to keep the P1 message as a draft, then continue to Phase 6 (2026-10-27).
 
+User accepted REVIEW GATE 7 and authorized Phase 8 (2026-10-27).
+
 ### Phase 6: Scale-up and size sensitivity (≈ 30 min work + ≈ 60–90 min machine)
 
 - [x] 6.1 `--phase scale` (E5: A at workers 4, best config at workers 4, 600 samples, 1 repetition). All six language/config runs completed 200/200 with no failures.
@@ -422,10 +424,10 @@ Steps:
 
 ### Phase 8: Final report, docs, README, team plan (≈ 60–75 min)
 
-- [ ] 8.1 Regenerate the final report. Read it fully as P1 would: can they pick the subset size and worker count from it **without asking you anything**? If not, fix the report generator, not the text by hand.
-- [ ] 8.2 Edit documents exactly as listed in **Section 8**.
-- [ ] 8.3 `pytest tests/test_layout.py -q` (README paths exist), then `ruff check . && ruff format --check . && pytest -q`.
-- [ ] 8.4 Commit docs: `W2-P2-05: report and documentation`.
+- [x] 8.1 Regenerated and reviewed the report as P1: subset scenarios and measured worker choices are shown; non-batched variant B was tested at one worker, while scale projections use the four-worker A path because batching failed fidelity.
+- [x] 8.2 Updated root README, Joern README, docs index, and SHIELD_PLAN; kept D38 proposed for P1 and documented the measured extraction cost.
+- [x] 8.3 `tests/test_layout.py`: 63 passed; Ruff check clean; 198 files already formatted; full suite 819 passed, 2 skipped (the initial sandbox run had six Windows temp-rename permission errors, resolved by rerunning with temp-directory access).
+- [x] 8.4 Commit docs: `W2-P2-05: report and documentation`.
 - **REVIEW GATE 8.**
 
 ### Phase 9: Close-out (≈ 30 min)
@@ -594,6 +596,7 @@ sequenceDiagram
 2026-10-27  REVIEW GATE 5 accepted by Eyad: keep the P1 note as a draft and continue to Phase 6.
 2026-10-27  Phase 6 complete: E5 scale run covered 200 samples per language/config (600 scale samples total), six configurations, all successful; report adds E6 tail stats and E5/E4 comparisons; C/b20 changes >25% in all groups, so projections use E5. tests/spikes 115 passed + 2 skipped; Ruff and git diff --check clean. Stopped at REVIEW GATE 6.
 2026-10-27  REVIEW GATE 6 accepted by Eyad; Phase 7 started. Live two-file-per-group probe: C/C++/Python all not usable by exact per-file node/edge histograms; mismatches C 56.7%/56.7%, C++ 45.6%/30.9%, Python 32.1%/33.2%; unattributable METHOD counts 1/10/4; cross-file CALL edges 0. Report recommendations fall back to non-batched E3 B; E8 projections use E5 A baseline. Variant D feasibility not evaluated. 118 passed + 2 skipped; Ruff clean. Stopped at REVIEW GATE 7.
+2026-10-27  Phase 8 complete: final report and docs reviewed; `pytest --co -q` reported 821 collected; layout 63 passed; Ruff clean; format clean; full suite 819 passed + 2 skipped after rerun with required temp-file rename access. Root README count and benchmark map updated; D38 remains proposed for P1. Stopped at REVIEW GATE 8.
 ```
 
 ---
