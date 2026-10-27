@@ -563,7 +563,7 @@ sequenceDiagram
             B->>A: extract(code, language, extension)
             A->>D: docker run + joern-parse + joern-export
         else variants B and C
-            B->>D: one container, shell script with @@T / @@PEAK markers
+            B->>D: one container, shell script reports timings and peak memory
         end
         D-->>B: output + cgroup peak memory
         B->>B: append one row to results.csv
