@@ -20,7 +20,7 @@
   "rows_total": 468315,
   "cross_source_duplicate_codes": 3,
   "split_method": "project-disjoint connected components, greedy + local search (multilabel CWE balance)",
-  "project_normalizer": "shield_core.datasets.project_normalization.normalize_project_name",
+  "project_normalizer": "project_normalization.normalize_project_name",
   "optimizer": {
     "method": "project-disjoint connected components, greedy + local search (multilabel CWE balance)",
     "components": 1498,
