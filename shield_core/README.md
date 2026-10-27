@@ -1,22 +1,34 @@
-# shield_core/
+# `shield_core/`
 
-`shield_core` is the product's engine: a Python library plus a CLI. The FastAPI backend, Angular app and VS Code extension (Weeks 5-6) will only ever call `shield_core/interface.py`.
+`shield_core` is SHIELD's Python library and CLI. The frozen public API is in `interface.py`.
 
-| File / folder | What it is |
+| File / folder | What it does |
 | --- | --- |
-| `interface.py` | FROZEN public contract: `predict`, `scan_repo`, `suggest_fix` + data classes (v1.0). |
-| `cli.py` | `shield scan <file>` command-line front end. |
-| `tracking.py` | Run logging (MLflow / W&B / console), seeds, dataset hashes. |
-| `paths.py` | Where everything lives on disk (repo root, data/, docs/ folders). Import paths from here. |
-| `datasets/` | Raw datasets -> one schema -> deduped -> merged -> leakage-safe splits. |
-| `embeddings/` | CodeBERT vectors: for whole functions and for graph nodes. |
+| `interface.py` | Public `predict`, `scan_repo`, and `suggest_fix` calls plus their result dataclasses. |
+| `cli.py` | `shield scan <file>`; returns the frozen `Result` as JSON. |
+| `tracking.py` | Seeds, dataset hashes, and MLflow/W&B/console run logging. |
+| `paths.py` | Central paths for repo, data, docs, and generated artifacts. |
+| `datasets/` | Dataset schema, loaders, deduplication, merge, and group-safe splits. |
+| `embeddings/` | CodeBERT function and graph-node embeddings. V1 uses sliding windows and mean pooling. |
 | `eval/` | Evaluation metrics. |
-| `extraction/` | Source code -> code property graph (Joern behind an interface) + a disk cache. |
-| `fix/` | Fix generation (template-based today; CodeT5 later). |
-| `languages/` | Language plug-ins: one YAML per language + the registry that validates them. |
-| `models/` | Which model answers a scan: the model registry and its config. |
-| `taint/` | Taint-analysis queries generated from the language YAMLs. |
-| `verify/` | 'Is this fix sane?': syntax, pattern checks, evidence line, PASS/FAIL verdict. |
+| `extraction/` | Joern code-property-graph extraction and disk cache. |
+| `fix/`, `verify/` | Template fixes and verification checks. |
+| `languages/` | Language configuration and registry. |
+| `models/` | Model registry, CodeBERT + XGBoost V1 loader, and GitHub Release installer. |
+| `taint/` | Taint-analysis query generation and result parsing. |
 
-- Rule: `scripts/` may import `shield_core`; `shield_core` never imports `scripts/`.
-- Rule: no language name is hard-coded here; languages are plug-ins in `languages/`.
+## Use the trained Python V1
+
+After the maintainer publishes `shield-v1.zip` on GitHub Release tag `v1`, install the project,
+fetch the bundle, and scan a file:
+
+```powershell
+python -m pip install -e ".[ml]"
+python -m shield_core.models.install --tag v1
+python -m shield_core.cli scan .\path\to\file.py
+```
+
+The installer verifies SHA-256 checksums before installing the model to `model_artifacts/v1/`.
+For a private repository, set `GH_TOKEN` or `GITHUB_TOKEN` with release-read access. You can also
+call `shield_core.interface.predict(code, "python")` after installing V1. CodeBERT's pretrained
+weights must be cached or downloadable on first inference. C/C++ currently use the registry stub.
