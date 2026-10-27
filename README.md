@@ -134,7 +134,8 @@ artifact is missing or cannot load, the registry falls back to the built-in stub
 | | Group-safe splits (`splits.py`, manifest v0.2) | ✅ | train / val / test / project-disjoint holdout |
 | | Split QA tool (`scripts/data_audit/split_qa.py`) | ⬜ | File exists but is **empty** (W2-P5-04) |
 | **Graphs** | `GraphExtractor` + Joern + cache | ✅ | Library only |
-| | Batch extraction over the training subset | ⬜ | W2-P1-02 |
+| | Batch extraction over the training subset | ⬜ | W2-P1-02; speed measured (W2-P2-05) |
+| | Extraction benchmark (`scripts/spikes/joern/benchmark_extraction.py`) | ✅ | Per-sample vs batched Joern, 1/2/4 workers, memory; results in `docs/graphs/extraction_report.md` |
 | | CPG → PyG converter | 🟡 | `scripts/graphs/graphml_to_pyg.py` (not yet in `shield_core/`) |
 | **Taint** | Query generator from YAML | ✅ | `shield_core/taint/joern_queries.py` |
 | | Taint spike driver | ✅ | `scripts/spikes/taint/run_taint_spike.py` |
@@ -401,7 +402,7 @@ SHIELD/
 │   ├── data_audit/               ← acceptance_check · explore_* reports · absent-commit check · split_qa (empty)
 │   ├── embeddings/               ← token lengths, long-function windows, bulk embedding jobs
 │   ├── graphs/                   ← graphml_to_pyg · try_extractor · filter_counts · inspect_export/ (GraphML viewers)
-│   ├── spikes/                   ← joern/ (Joern go/no-go) · taint/ (taint spike driver)
+│   ├── spikes/                   ← joern/ (Joern go/no-go + extraction benchmark) · taint/ (taint spike driver)
 │   ├── training/                 ← train_v1.py
 │   └── tutorials/                ← demo_tracking.py · pyg/ (PyG lessons + toy GNN)
 │
@@ -496,7 +497,8 @@ SHIELD/
 | Judge a fix | `shield_core/verify/` | `evidence.py`, `pattern_checks.py` | ✅ |
 | Parse and edit Python source safely | `shield_core/verify/` | `pysource.py` | ✅ |
 | Run Joern reproducibly | `docker/joern/` | `Dockerfile` | ✅ |
-| Measure Joern speed / graph quality | `scripts/spikes/joern/` | `run_joern_spike.py`, `audit_joern_spike.py` | ✅ |
+| Measure Joern speed / graph quality | `scripts/spikes/joern/` | `run_joern_spike.py`, `audit_joern_spike.py`, `benchmark_extraction.py` | ✅ |
+| Measure extraction cost for N rows (per-sample vs batched, workers) | `scripts/spikes/joern/` | `benchmark_extraction.py`, `benchmark_report.py` | ✅ |
 | Measure token lengths / long-function policy | `scripts/embeddings/` | `token_length_stats.py`, `long_function_analysis.py` | ✅ |
 | Learn PyG / run a toy GNN | `scripts/tutorials/pyg/` | `toy_gnn.py` | ✅ |
 | Add a new language | `shield_core/languages/` | new `<lang>.yaml` ([guide](#161-add-a-language)) | ✅ |
@@ -615,11 +617,16 @@ SHIELD/
 | `spikes/joern/run_joern_spike.py` | Runs Joern on 20 samples each of Python, C, C++. | `*_samples_20.parquet` | `data/interim/joern_spike_full/`, `joern_spike_results.csv` |
 | `spikes/joern/audit_joern_spike.py` | Checks graph quality (CFG/DDG/call edges) of those runs. | spike outputs | `joern_spike_audit.csv`, `docs/graphs/joern_spike.md` |
 | `spikes/joern/analyze_joern_performance.py` | Time per sample summary. | results CSV | printed stats |
+| `spikes/joern/benchmark_core.py` | Pure batching, marker parsing, failures, statistics, projections and CSV helpers (no Docker). | none | none |
+| `spikes/joern/benchmark_samples.py` | Builds seeded, disjoint spike-60 and scale-600 sample sets. | `*_samples_20.parquet`, `*_deduped.parquet` | `data/interim/joern_benchmark/samples_manifest.csv` and job folders |
+| `spikes/joern/benchmark_extraction.py` | Times A per-sample, B one container with per-file parse/export, and C batched Joern runs; workers and cgroup memory. | sample sets, `shield-joern` image | `data/interim/joern_benchmark/{results,samples}.csv`, `environment.json` |
+| `spikes/joern/benchmark_fidelity.py` | Probes filename attribution and compares batched graphs with per-file Joern graphs. | fixtures, spike samples, `shield-joern` image | `data/interim/joern_benchmark/fidelity.json` |
+| `spikes/joern/benchmark_report.py` | Generates benchmark report and scale projections. | benchmark CSV/JSON files, parquet counts | `docs/graphs/extraction_report.md`, `docs/graphs/extraction_benchmark_summary.csv` |
 | `spikes/taint/run_taint_spike.py` | Runs the YAML-generated taint query over `tests/fixtures/taint/` in Docker and compares with each file's `EXPECT:` line (`OK`, `KNOWN-MISS`, `KNOWN-FP`, `NOW-OK`, `UNEXPECTED`). | `--lang python\|cpp` | verdict table, exit code 1 on `UNEXPECTED` |
 | `tutorials/pyg/check_env.py`, `lesson*.py`, `toy_gnn.py` | Environment check, PyG tutorials, toy GNN on MUTAG. | — | printed results |
 | `graphs/inspect_export/*.py` | Tiny inspectors: node/edge type counts, methods, edges of a Joern export. | `export.xml` | printed |
 
-### 8.10 `tests/` (680+ test cases; the tree mirrors `shield_core/`)
+### 8.10 `tests/` (821 collected test cases; the tree mirrors `shield_core/`)
 
 | Folder | Test files |
 | --- | --- |
@@ -630,6 +637,7 @@ SHIELD/
 | `datasets/` | `test_schema.py`, `test_loaders.py`, `test_bigvul_loader.py`, `test_megavul.py`, `test_cvefixes_cpp_loaders.py`, `test_cvefixes_python_loader.py`, `test_dedupe_overlap.py`, `test_project_normalizer.py`, `test_splits.py` |
 | `extraction/` | `test_graph_cache.py` |
 | `taint/` | `test_taint_queries.py` |
+| `spikes/` | `test_benchmark_core.py`, `test_benchmark_samples.py`, `test_benchmark_commands.py`, `test_benchmark_report.py`, `test_benchmark_fidelity.py`, `test_benchmark_docker_smoke.py` (requires Docker/image) |
 | `fix/` | `test_fix_template_sql.py`, `test_fix_template_command.py`, `test_fix_template_path.py` |
 | `verify/` | `test_pattern_checks.py`, `test_evidence.py` |
 | `eval/` | `test_metrics.py` |
@@ -801,7 +809,35 @@ sequenceDiagram
     EV-->>Caller: VerificationReport (verdict + evidence line)
 ```
 
-### 9.6 Who imports whom (dependency map)
+### 9.6 Story F: extraction benchmark
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant B as benchmark_extraction.py
+    participant S as benchmark_samples.py
+    participant A as JoernExtractor (variant A)
+    participant D as Docker shield-joern (variants B, C)
+    participant F as benchmark_fidelity.py
+    participant R as benchmark_report.py
+    B->>S: spike-60 + scale-600 sample sets
+    S-->>B: job files + samples_manifest.csv
+    loop each configuration (variant, workers, batch size, rep)
+        alt variant A
+            B->>A: extract(code, language, extension)
+            A->>D: docker run + joern-parse + joern-export
+        else variants B and C
+            B->>D: one container; emit @@T and @@PEAK markers
+        end
+        D-->>B: output + cgroup peak memory
+        B->>B: append results.csv and samples.csv
+    end
+    F->>D: compare two-file batch with per-file Joern outputs
+    F-->>R: fidelity.json (per-file verdicts)
+    R->>B: read results.csv and samples.csv
+    R-->>R: aggregate timings and project hours for N rows
+```
+### 9.7 Who imports whom (dependency map)
 
 An arrow `A --> B` means "A imports B". The map shows that **`shield_core/languages/registry.py` is the root of
 almost everything** and that `interface.py` is the only thing the outside world needs to know.
@@ -952,6 +988,10 @@ flowchart TD
 | 7 | `python -m shield_core.datasets.pipeline.splits` | `merged_datasets.parquet` | `data/interim/splits/*.parquet`, `docs/datasets/audits/dataset_manifest_v0.json` | steps 8, 9 |
 | 8 | `python -m scripts.embeddings.long_embedding --data <split>.parquet` | one split | `<stem>_processed.parquet`, `<stem>_embeddings.npy` | step 9 (optional features) |
 | 9 | `python -m scripts.training.train_v1 --grid '{"max_depth":[3,5],"learning_rate":[0.03,0.07]}' --publish` | train/val/test metadata, CodeBERT cache or aligned vectors, manifest | run folders, `v1_grid_comparison.csv`, and (with `--publish`) `model_artifacts/v1/` | scan with `shield scan` |
+| 10 | `python -m scripts.spikes.joern.benchmark_samples` | spike and deduped sample parquet files | `data/interim/joern_benchmark/samples_manifest.csv` | extraction runner |
+| 11 | `python -m scripts.spikes.joern.benchmark_extraction --phase all` | spike and deduped sample parquet files; `shield-joern` | `data/interim/joern_benchmark/{results,samples}.csv`, `environment.json` | fidelity probe and report |
+| 12 | `python -m scripts.spikes.joern.benchmark_fidelity` | two-file fixtures/spike samples; `shield-joern` | `data/interim/joern_benchmark/fidelity.json` | benchmark report |
+| 13 | `python -m scripts.spikes.joern.benchmark_report` | benchmark CSV/JSON artifacts; deduped parquet counts | `docs/graphs/extraction_report.md`, `extraction_benchmark_summary.csv` | D38 review |
 
 ### 10.3 Inputs and outputs of each runtime stage
 
@@ -997,6 +1037,10 @@ flowchart LR
 | Embeddings | `<stem>_embeddings.npy` + `<stem>_processed.parquet` | `long_embedding.py` | `train_v1.py` | `float32` matrix, row *i* ↔ parquet row *i* |
 | Graph cache | `data/cache/graphs/…` | `CachedGraphExtractor` | any `GraphExtractor` user | gzip JSON of `CodeGraph` |
 | Joern export | `<folder>/export/export.xml` | `joern-export` | `parse_graphml`, `graphml_to_pyg.py`, `scripts/graphs/inspect_export/*` | GraphML |
+| Benchmark results and samples | `data/interim/joern_benchmark/{results,samples}.csv` | `benchmark_extraction.py` | `benchmark_report.py` | CSV; run and per-sample measurements |
+| Benchmark sample manifest | `data/interim/joern_benchmark/samples_manifest.csv` | `benchmark_samples.py` | `benchmark_extraction.py` | CSV; sample IDs and hashes |
+| Benchmark environment and fidelity | `data/interim/joern_benchmark/{environment.json,fidelity.json}` | `benchmark_extraction.py`, `benchmark_fidelity.py` | `benchmark_report.py` | JSON |
+| Extraction benchmark outputs | `docs/graphs/{extraction_report.md,extraction_benchmark_summary.csv}` | `benchmark_report.py` | reviewers, D38 | Markdown and CSV |
 | Model config | `shield_core/models/models.yaml` | humans | `models/registry.py` | YAML |
 | Language config | `shield_core/languages/*.yaml` | humans | `shield_core/languages/registry.py` and everything that asks it | YAML |
 | Audit reports | `docs/datasets/audits/dataset_audit.md`, `docs/datasets/audits/dedupe_report.md`, `docs/graphs/joern_spike.md` | audit scripts | humans, gate reviews | Markdown |
@@ -1449,11 +1493,12 @@ Honest list, so nobody is surprised. Each item names the plan task that closes i
 | 3 | `scripts/data_audit/split_qa.py` is an **empty file**; the split QA tool and its CI test do not exist yet. | `scripts/` | W2-P5-04 |
 | 4 | The CodeBERT pretrained weights need to be cached or downloaded on first inference; the XGBoost model files are distributed in the V1 release bundle. | `model_artifacts/v1/`, Hugging Face cache | provide pretrained weights for offline installs |
 | 5 | `shield_core/eval/metrics.py` gives weighted aggregates only (no per-CWE / per-language / multi-label). | `shield_core/eval/` | W2-P3-03 |
-| 6 | No batch graph extraction yet; the converter to PyG is a script, not a library module; graph schema is `0.1-draft`. | `extraction/`, `scripts/graphs/graphml_to_pyg.py` | W2-P1-02, W2-P2-01 |
+| 6 | No batch graph runner yet (W2-P1-02); speed per sample is measured (`docs/graphs/extraction_report.md`), but two-file fidelity checks did not validate batching for Python, C or C++; the converter to PyG is still a script and graph schema is `0.1-draft`. | `extraction/`, `scripts/graphs/graphml_to_pyg.py`, `scripts/spikes/joern/` | W2-P1-02, W2-P2-01, W2-P2-05 |
 | 7 | **364 CVE ids cross splits**; CVE-level grouping is not enforced. | manifest `diagnostics` | W2-P1-03 |
 | 8 | Python is only ≈ 1 % of rows; per-CWE Python claims are fragile. Class imbalance ≈ 6 % positives. | data | report group counts; D39 negatives |
 | 9 | No license/source note per dataset. | `docs/` | W2-P1-04 |
-| 10 | `docs/graphs/pyg_setup.md` has stale lines. | `docs/` | W2-P5-05 || 11 | `CPGNodeEmbedder` keeps its cache in memory only. | `embeddings/node_embeddings.py` | W2-P3-04 |
+| 10 | `docs/graphs/pyg_setup.md` has stale lines. | `docs/` | W2-P5-05 |
+| 11 | `CPGNodeEmbedder` keeps its cache in memory only. | `embeddings/node_embeddings.py` | W2-P3-04 |
 | 12 | C++ cross-function taint is not supported by Joern's default call resolution; claims are limited to Python and C (decision D28). | `taint/`, docs | by design |
 | 13 | `sample1/ … sample5/` scratch folders at the repo root. | repo root | add to `.gitignore` or delete |
 
@@ -1559,6 +1604,14 @@ Docker so everyone uses the same pinned version (`docker/joern/Dockerfile`). The
 (pinned `JOERN_VERSION`), a Python venv with `tree-sitter` + Python/C/C++ grammars, a smoke test in
 `/opt/smoke`, and a non-root user `shield` (mounted code appears in `/workspace`).
 
+**Sizing workers (measured on Windows 11, Docker Desktop 7.6 GiB, Joern 4.0.647).** The tested
+non-batched B runs used `-Xmx 4g` and peaked at 277?346 MiB per container. Production-path A at four
+workers delivered 2.50??2.61? speed-up over one worker; this is the only production-path worker count
+validated across the scale set. Four-worker C/batch-20 peaks were 851 MiB (C), 825 MiB (C++) and
+1,871 MiB (Python), but the fidelity probe did not validate batching, so those rates are speed-only.
+Use four workers for A when parallel extraction is needed; B was measured only at one worker. Keep
+`workers ? Xmx` within Docker Desktop's memory limit (4 ? 4 GiB exceeds 7.6 GiB); lower `-Xmx` or
+worker count if the runtime's actual memory approaches that limit.
 ```bash
 # build (Docker Desktop must be running), from the repo root
 docker build -t shield-joern docker/joern
