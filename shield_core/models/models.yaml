@@ -1,23 +1,10 @@
-# default   version used when nobody asks for a specific one
-# fallback  version used when the default cannot be loaded (V1, always)
-
-
-# Per entry:
-#   version
-#   kind       how to load it. "stub" = the placeholder model that answers "not vulnerable"
-#   languages
-#   path       (optional) file inside the model folder (model_artifacts/ or $SHIELD_MODELS_DIR)
-#   sha256     (optional) checksum of that file; a mismatch counts as a corrupt model
-#   options    (optional) settings passed to the loader of this kind
-
-
-# now v1 is stub -> but in future we will change v1's kind, add `path` and `sha256`,and list only the languages the real V1 supports
-# Languages no entry lists are answered by the built-in stub
-
-
 default: v1
-fallback: v1
+fallback: stub-v0
 models:
   - version: v1
+    kind: v1
+    languages: [python]
+    path: v1
+  - version: stub-v0
     kind: stub
     languages: [python, cpp]

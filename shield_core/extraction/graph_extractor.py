@@ -12,12 +12,12 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import Any
 
-from languages import registry
+from shield_core.languages import registry
 
 # Bump ONLY when the raw extractor output changes (different Joern flags, different attributes
 # stored per node/edge). It is part of the cache key (D5), so a bump invalidates every cached
 # graph. Changes to which node/edge types are KEPT belong to the converter version instead
-# (see docs/graph_schema.md, "Versions").
+# (see docs/graphs/graph_schema.md, "Versions").
 GRAPH_SCHEMA_VERSION = "0.1-draft"
 
 
@@ -94,7 +94,8 @@ def resolve_extension(language: str, extension: str | None = None) -> str:
     """Pick the file extension Joern will see. It changes the parse (.c = C, .cpp = C++).
 
     Pass the real extension when the file name is known (datasets, repo scans). With None, the
-    language's first extension in languages/<name>.yaml is used (the default for snippets).
+    language's first extension in shield_core/languages/<name>.yaml is used (the default for
+    snippets).
     """
     spec = registry.require_enabled(language)
     if extension is None:

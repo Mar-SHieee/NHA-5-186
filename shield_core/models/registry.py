@@ -15,7 +15,7 @@ How a model is chosen when no version is given:
   3. if no entry lists the language, the built-in stub (model_version "stub");
   4. if entries exist but none can be loaded, ModelLoadError. Never a silent stub.
 
-Not to be confused with languages/registry.py, which is the catalog of languages.
+Not to be confused with shield_core/languages/registry.py, which is the catalog of languages.
 """
 
 from __future__ import annotations
@@ -31,7 +31,7 @@ from typing import TYPE_CHECKING, Any, Callable, Protocol
 
 import yaml
 
-from languages import registry as language_registry
+from shield_core.languages import registry as language_registry
 from shield_core.tracking import hash_file
 
 if TYPE_CHECKING:
@@ -239,9 +239,8 @@ def _load_stub(entry: ModelEntry, artifact_dir: Path) -> Model:
 
 # A kind maps to a loader function, or to "package.module:function", which is imported only
 # when a model of that kind is loaded, so heavy libraries (xgboost, torch) are not imported
-# at startup. Day 5: add one line here for the real V1, for example
-#     "xgboost_codebert": "shield_core.models.v1:load",
-KINDS: dict[str, Loader | str] = {"stub": _load_stub}
+# at startup. "v1" = windowed CodeBERT embeddings + calibrated XGBoost binary/CWE heads.
+KINDS: dict[str, Loader | str] = {"stub": _load_stub, "v1": "shield_core.models.v1:load"}
 
 
 def register_kind(kind: str, loader: Loader | str) -> None:

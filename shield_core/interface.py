@@ -4,7 +4,7 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Literal, Optional
 
-from languages import registry
+from shield_core.languages import registry
 from shield_core.models import registry as model_registry
 
 INTERFACE_VERSION = "1.0"  # covers the signatures and exceptions

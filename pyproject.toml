@@ -32,10 +32,10 @@ tracking = ["mlflow", "wandb"]
 gnn = ["torch_geometric>=2.8"]
 
 [tool.setuptools.packages.find]
-include = ["shield_core*", "eval*" ,"languages*"]
+include = ["shield_core*", "scripts*"]
 
 [tool.setuptools.package-data]
-languages = ["*.yaml"]
+"shield_core.languages" = ["*.yaml"]
 "shield_core.models" = ["*.yaml"]
 
 [tool.pytest.ini_options]
@@ -44,6 +44,7 @@ pythonpath = ["."]
 
 [project.scripts]
 shield = "shield_core.cli:main"
+shield-model-install = "shield_core.models.install:main"
 
 [tool.ruff]
 line-length = 100
@@ -60,4 +61,4 @@ select = ["E", "F", "I", "B"]
 #    B = common bug patterns.
 
 [tool.ruff.lint.isort]
-known-first-party = ["shield_core", "eval", "languages"]
+known-first-party = ["shield_core"]

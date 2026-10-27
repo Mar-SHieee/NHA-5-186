@@ -18,7 +18,6 @@ import xml.etree.ElementTree as ET
 from collections.abc import Callable
 from pathlib import Path
 
-from languages import registry
 from shield_core.extraction.graph_extractor import (
     CodeGraph,
     ExtractionError,
@@ -28,6 +27,7 @@ from shield_core.extraction.graph_extractor import (
     normalize_code,
     resolve_extension,
 )
+from shield_core.languages import registry
 
 DEFAULT_JOERN_VERSION = "4.0.647"  # must match ARG JOERN_VERSION in docker/joern/Dockerfile
 DEFAULT_DOCKER_IMAGE = "shield-joern"
