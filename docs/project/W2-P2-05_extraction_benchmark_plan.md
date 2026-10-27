@@ -180,13 +180,13 @@ Branch: `w2-p2-extraction-benchmark`. Commits and PR title start with `W2-P2-05:
 ## 5. STATE (update after every step)
 
 ```
-current_phase:      Phase 5 (minimum run)
-last_ticked_step:   4.4
-in_progress:        Phase 5 minimum benchmark run; Phase 3 dry-run gate and Phase 4 report generator complete
+current_phase:      Phase 7 REVIEW GATE 7 (awaiting user review)
+last_ticked_step:   7.6
+in_progress:        none; Phase 7 complete, waiting at Review Gate 7
 branch:             w2-p2-extraction-benchmark
 machine:            Windows, 24 logical CPUs, 16 GB RAM (16,907,100,160 B); Docker Desktop (WSL2, no .wslconfig = defaults) sees 24 CPUs and 8,188,317,696 B (~7.6 GiB)
 repo location:      C:\Users\eyada\OneDrive\Desktop\SHIELD  <-- INSIDE OneDrive (see R9: benchmark work dirs must be outside it)
-baseline:           ruff clean, 184 files formatted, pytest 697 passed + 1 skipped (151 s); after Phase 1: tests/spikes = 52 passed; after 2.2: 67 passed; after 3.2: 97 passed; after 3.3: 105 passed + 1 skipped on Eyad's Windows; after 3.4 code: 127 passed here; after 3.5: tests/spikes 139 passed + 1 skipped on Eyad's Windows; after 3.6: 148 passed + 1 skipped; after 3.7: 170 passed + 1 skipped; after 3.8/3.9 on Eyad's Windows: tests/spikes 171 (smoke test PASSED against real Docker, 10.4 s), whole suite 803 passed + 2 skipped (194 s), ruff check clean, ruff format reformatted 3 files (the repo copy is now the source of truth)
+baseline:           ruff clean, 184 files formatted, pytest 697 passed + 1 skipped (151 s); after Phase 1: tests/spikes = 52 passed; after 2.2: 67 passed; after 3.2: 97 passed; after 3.3: 105 passed + 1 skipped on Eyad's Windows; after 3.4 code: 127 passed here; after 3.5: tests/spikes 139 passed + 1 skipped on Eyad's Windows; after 3.6: 148 passed + 1 skipped; after 3.7: 170 passed + 1 skipped; after 3.8/3.9 on Eyad's Windows: tests/spikes 171 (smoke test PASSED against real Docker, 10.4 s), whole suite 803 passed + 2 skipped (194 s), ruff check clean, ruff format reformatted 3 files (the repo copy is now the source of truth); Phase 5 report tests/spikes 113 passed + 2 skipped; after Phase 7 tests/spikes 118 passed + 2 skipped
 docker image:       shield-joern:latest, id 51394b312f9a, 8.49 GB disk
 probes:             cgroup v2 works (/sys/fs/cgroup/memory.peak) -> peak_method = cgroup_v2; JAVA_OPTS reaches the container env (-Xmx512m printed);
                     Joern's own banner says the frontend (pysrc2cpg / c2cpg) runs as a SEPARATE process with -J-Xmx4096m -> JAVA_OPTS may NOT cap it (to verify in Phase 5)
@@ -197,7 +197,7 @@ samples (2.3):      manifest = 660 rows (60 spike + 600 scale); function length 
                     spike : python 2/20/115/243 · c 1/17/106/245 · cpp 3/10/75/82   (n=20 each)
                     scale : python 2/21/110/6527 · c 1/11/107/828 · cpp 1/19/90/609 (n=200 each)
                     note: python scale max 6527 lines -> likely timeout/heavy-tail case for E5/E6 (300 s default timeout)
-environment.json:   captured 2026-10-26 (24 cpu, 16,907,100,160 B RAM, Docker 24 cpu / 8,188,317,696 B, image 51394b312f9a..., repo_inside_onedrive=true, notes 'plugged in, high performance, apps closed')
+environment.json:   captured 2026-10-26 23:56 UTC (24 cpu, 16,907,100,160 B RAM, Docker 24 cpu / 8,188,325,888 B, image 51394b312f9a..., repo_inside_onedrive=true); Legion Performance Mode verified; plug-in and background-app state not independently verified
 step 3.4 smoke:     floor = 10.790 (cold), 0.670, 0.672, 0.671, 0.644 s (median 0.671 s);
                     python_spike_001 (5 lines, rep=1): wall=8.975 s, parse=5.978 s, export=2.276 s, xml=0.002 s, peak=249.0 MiB, nodes=21, edges=52
 step 3.5 hand run:  `--phase variants --variant A --limit 1 --reps 1 --no-warmup` (no warm-up, so the first run is cold):
@@ -213,6 +213,12 @@ step 3.7 hand run:  `--phase all --dry-run` = 131 runs, rough 3.1 h (guesses, no
                     A  s/sample w1->w2: python 8.895->5.422 (speed-up 1.64) · c 7.399->4.056 (1.82) · cpp 8.468->4.663 (1.82)
                     C  wall w1 / w2: python 11.66/11.45 · c 7.94/8.88 · cpp 20.13/10.18 (cpp w1 was the cold first run); n=4 is too small for C shards (2 JVM starts for 2 samples each), E4 uses 20
                     peak per C container 259-270 MiB at both worker counts
+
+Phase 5 minimum-run numbers (current report: `docs/graphs/extraction_report.md`):
+                    E2 on Legion Performance Mode: Docker floor median 0.785 s; parse/export/XML medians B — c 2.732/1.123/0.001 s, cpp 3.018/1.446/0.005 s, Python 2.853/1.773/0.014 s; all E2 samples succeeded. Earlier E2 Quiet Mode rows are retained as experiment E2_QUIET and excluded from the report tables.
+                    E3 production A median s/sample — c 4.847, cpp 5.049, Python 5.451; B — c 4.454, cpp 4.472, Python 4.901; best fully successful C — c b20 0.486, cpp b20 0.426, Python b50 0.645. C/c/b50 had one Docker error (20/20 failed at rep 2); two other reps succeeded, so the report shows 66.7% success and does not recommend it for c.
+                    E4 A workers 1/2/4: c 102.197/56.597/40.904 s, cpp 98.668/56.945/39.433 s, Python 104.315/57.448/39.928 s; 4-worker speed-up 2.50x/2.50x/2.61x, no failures. C b20 at 2 workers: c/cpp/Python throughput 2.420/2.534/1.992 samples/s, peak 290.7/295.4/504.5 MiB; 4 workers gave no consistent throughput gain; no OOM.
+                    Preliminary best-config E4 projections: S1 ~49.7 h median / 89.7 h p95, S2 ~1.7/3.2 h, S3 ~3.5/6.4 h, S4 ~7.0/12.7 h, S5 (Python) 0.63/1.21 h. A baseline projections are also in report. These are spike-60 figures, before scale-up (Phase 6) and fidelity validation (Phase 7).
                     A c-group w1 = 7.4 s/sample warm vs 23.5 s in 3.5: confirms the 23.5 s was a cold start
                     Phase 7 hint (C group, 3 identical tiny functions of 18n/42e): batch graphs fit  total = shared overhead + per-file part  exactly
                     (1 file 18n/42e, 2 files 25n/64e, 4 files 39n/108e -> 11n/20e shared + 7n/22e per file). Only these near-identical samples; not yet a fidelity claim
@@ -382,20 +388,22 @@ Checklist:
 
 Run the decision-grade subset on the **spike 60** only.
 
-- [ ] 5.1 Machine ready (plugged in, power mode, apps closed). `--phase env` done.
-- [ ] 5.2 `python -m scripts.spikes.joern.benchmark_extraction --phase decompose` (E2).
-- [ ] 5.3 `--phase variants --reps 3` (E1 + E3: A, B, C with N = 10/20/50 at workers 1).
-- [ ] 5.4 `--phase workers --reps 2` (E4 at workers 1/2/4 for A and the best of B/C). Watch for `oom`/`docker_error`; if 4 workers fail, rerun with `--xmx 2g` and record.
-- [ ] 5.5 `python -m scripts.spikes.joern.benchmark_report` → check `docs/graphs/extraction_report.md` v0.
-- [ ] 5.6 Send P1 the **message** (template in Section 7.3) with: measured s/sample per variant, recommended worker count, hours for S1–S5 (preliminary), known caveats (Python batching attribution still open).
-- [ ] 5.7 Update STATE with the key numbers. Tick W2-P2-05 as "Day-2 numbers delivered" in Section 9 (the team-plan box is ticked only in Phase 8).
+- [~] 5.1 Environment refreshed and Legion Performance Mode verified; plugged-in and background-app status could not be independently verified.
+- [x] 5.2 E2 completed under Performance Mode; older Quiet Mode calibration is retained separately as E2_QUIET.
+- [x] 5.3 E1 represented by E3's A production-path runs; E3 A/B/C at workers 1, 3 repetitions, all configs recorded. One C/c/b50 repetition had a Docker error and remains in the report.
+- [x] 5.4 E4 A and C/b20 worker grid at 1/2/4, 2 repetitions; all configs completed without OOM.
+- [x] 5.5 Report v0 generated and reviewed; E3 batch sizes, speed-up/efficiency, scenario counts, and preliminary E4/A projections are shown.
+- [~] 5.6 P1 hand-off message remains a draft at Eyad's request; not sent.
+- [x] 5.7 STATE updated with the key numbers. W2-P2-05 remains "Day-2 numbers delivered" pending user review; team-plan box is ticked only in Phase 8.
 - **REVIEW GATE 5 (Day-2 deadline):** user confirms the numbers and the message.
+
+User confirmed Phase 5 numbers and asked to keep the P1 message as a draft, then continue to Phase 6 (2026-10-27).
 
 ### Phase 6: Scale-up and size sensitivity (≈ 30 min work + ≈ 60–90 min machine)
 
-- [ ] 6.1 `--phase scale` (E5: A at workers 4, best config at workers 4, 600 samples, 1 repetition). Use `--resume` if interrupted.
-- [ ] 6.2 Check heavy tail: p95, max, number of timeouts, which samples; extra lines in the report from `samples.csv` (E6 correlation between `n_lines` and seconds; share of total time spent in the slowest 5 % of samples).
-- [ ] 6.3 Regenerate the report; compare scale throughput with spike throughput (if they differ by more than 25 %, say so and use the scale figure for projections).
+- [x] 6.1 `--phase scale` (E5: A at workers 4, best config at workers 4, 600 samples, 1 repetition). All six language/config runs completed 200/200 with no failures.
+- [x] 6.2 Checked heavy tail: report includes p50/p95/max, timeout and failure counts/IDs, line-count/time correlation, and slowest-5% time share from `samples.csv`.
+- [x] 6.3 Regenerated report and compared E5 to matched E4 throughput. C/b20 changes exceed 25% for c (+181.2%), C++ (+210.0%), and Python (+28.6%); projections use E5 scale throughput.
 - **REVIEW GATE 6.**
 
 ### Phase 7: Attribution probe and fidelity of batching (≈ 90 min)
@@ -404,12 +412,12 @@ Create `scripts/spikes/joern/benchmark_fidelity.py` + `tests/spikes/test_benchma
 Purpose: batching only helps if the combined export can be split back into **one graph per input file** that matches what variant A gives.
 
 Steps:
-- [ ] 7.1 Probe signals on a 2-file batch for each language (Python: `calls.py` + `get_user.py` from `tests/fixtures/joern/`; C/C++: two files from the spike set). For every candidate signal print whether it separates the files: `METHOD.FILENAME`, `NAMESPACE_BLOCK.FILENAME`, `TYPE_DECL.FILENAME`, `SOURCE_FILE` edges, `FILE.NAME`, AST/CONTAINS reachability from each file's METHOD nodes. Known from the repo: C `METHOD.FILENAME` works; Python `FILENAME` was `<empty>` in the inspected exports.
-- [ ] 7.2 Implement `attribute_nodes(nodes, edges) -> dict[node_id, file_key]` using the **working** signal(s), with an explicit `unattributable` bucket (shared stubs such as external `<operator>` methods, TYPE nodes). Unit-test it on a **hand-made tiny GraphML string** (no Docker).
-- [ ] 7.3 Compare, per file, batched vs variant A: histogram of node types and edge types over attributable nodes. Define the match rule in code and in the report: *equal after ignoring shared stubs* (list which types are ignored). Report the mismatch rate and the number of **cross-file CALL edges** in the batch.
-- [ ] 7.4 Decide per group: **usable** (histograms match, no unattributable method nodes), **usable with caveats** (list them), or **not usable** (then batching timings are "speed only", and the recommendation for that group falls back to the best non-batched variant). If Python is "not usable", propose a follow-up in the report: for example one distinct wrapper per file, or variant D (single JVM, one `importCode` per file). Do not implement it here.
-- [ ] 7.5 Optional time-box 30 min: variant D feasibility note (what Joern scripting call would export a graph per imported file). If unclear, write "not evaluated".
-- [ ] 7.6 Regenerate the report; commit: `W2-P2-05: batching fidelity probe`.
+- [x] 7.1 Probed two-file batches for each group: Python fixtures `calls.py` + `get_user.py`; first two spike samples for C and C++. Filename and file-node signals identify both file names, but AST reachability covers only 2/3 C, 4/14 C++, and 5/9 Python METHOD nodes.
+- [x] 7.2 Implemented `attribute_nodes(nodes, edges)` with an explicit unattributable bucket and filename/SOURCE_FILE/AST propagation. Hand-made GraphML unit tests run without Docker.
+- [x] 7.3 Compared per-file node/edge type histograms against variant A. The match rule omits unattributable nodes and incident edges, plus METHOD_PARAMETER_IN/OUT; report lists all ignored node types, mismatch rates, and cross-file CALL edge counts (zero in these pairs).
+- [x] 7.4 All groups are **not usable** under the exact histogram rule. Mismatch rates: C 56.7%/56.7%; C++ 45.6%/30.9%; Python 32.1%/33.2%. Unattributable METHOD nodes: 1/10/4 respectively. Recommendations fall back to non-batched E3 variant B. Python follow-up proposes distinct wrappers per file or variant D.
+- [x] 7.5 Optional variant D feasibility: not evaluated; recorded in the report.
+- [x] 7.6 Regenerated report and summary. `tests/spikes`: 118 passed, 2 skipped; Ruff and `git diff --check` clean. Commit: `W2-P2-05: batching fidelity probe`.
 - **REVIEW GATE 7.**
 
 ### Phase 8: Final report, docs, README, team plan (≈ 60–75 min)
@@ -465,12 +473,12 @@ The **"how long for N rows"** table (1.9) has columns: scenario · language · r
 ### 7.3 Message to P1 (send at Phase 5; reuse in the PR)
 
 ```
-P1, W2-P2-05 first numbers (spike 60, <machine>, Docker <cpus> CPUs / <ram> GB):
-- Production path (JoernExtractor): <x> s/sample (spike script was 5.85 s: it ran 3 exports).
-- Fixed cost per call (docker + JVMs): <y> s. Batching N=<n>: <z> s/sample (<k>x faster) - Python batching NOT yet verified (see 1.8).
-- Workers 1/2/4: <t1>/<t2>/<t4> s wall for 60 samples, peak <m> MiB per worker. Recommend <w> workers with -Xmx<g>.
-- Hours (preliminary): S1 <h1> h, S2 <h2> h, S3 <h3> h, S5 (all Python) <h5> h.
-Full table: docs/graphs/extraction_report.md. Open: attribution of batched Python graphs (Phase 7).
+P1, W2-P2-05 first numbers (spike 60; Windows 11; Docker 24 CPUs / 7.6 GiB):
+- Production path (JoernExtractor), median A: c 4.847, C++ 5.049, Python 5.451 s/sample. Historical spike was 5.85 s/sample but made three Joern exports per sample.
+- Variant B: c 4.454, C++ 4.472, Python 4.901 s/sample. Variant C batch 20: c 0.486, C++ 0.426, Python 0.675 s/sample; C Python batch 50 was 0.645 s/sample. C/c/b50 had one Docker error, so use C/c/b20 for the speed comparison. Batched graph fidelity is still open (Phase 7), especially Python.
+- Production-path A workers 1/2/4: c 102.2/56.6/40.9 s; C++ 98.7/56.9/39.4 s; Python 104.3/57.4/39.9 s for 20 samples. A 4-worker speed-up was about 2.5x; recommend A with 4 workers when fidelity-safe extraction is required. C/b20 at 2 workers was fastest in E4; 4 workers did not help consistently. C/b20 c/C++/Python peaks at 2 workers were 290.7/295.4/504.5 MiB per container.
+- Preliminary best-config hours from E4: S1 ~49.7 h; S2 ~1.7 h; S3 ~3.5 h; S4 ~7.0 h; S5 (all Python) ~0.63 h. A baseline and p95 estimates are in the report. These are spike-60 projections; scale-set and batching-fidelity checks remain.
+Full table: `docs/graphs/extraction_report.md`. P1 still decides D38 subset size.
 ```
 
 ### 7.4 Failure triage cheat-sheet
@@ -582,6 +590,10 @@ sequenceDiagram
 2026-10-26  Step 3.9 checks: ruff check clean, ruff format touched 3 files, pytest -q 803 passed + 2 skipped; confirmed commit `1affacf W2-P2-05: benchmark runner`.
 2026-10-27  REVIEW GATE 3 dry-run: 131 planned runs, rough estimate 3.1 h; no Docker commands executed.
 2026-10-27  Phase 4 done (4.1-4.4): benchmark_report.py + synthetic tests, parquet scenario counts, report and summary generated; tests/spikes 109 passed, 2 skipped; Ruff clean.
+2026-10-27  Phase 5 runs: E2 repeated in Performance Mode; E3 variants (3 reps) and E4 workers (2 reps) completed. Report v0 includes preliminary projections and preserves one C/c/b50 Docker-error repetition. Benchmarks have not been sent to P1; message awaits user review/channel.
+2026-10-27  REVIEW GATE 5 accepted by Eyad: keep the P1 note as a draft and continue to Phase 6.
+2026-10-27  Phase 6 complete: E5 scale run covered 200 samples per language/config (600 scale samples total), six configurations, all successful; report adds E6 tail stats and E5/E4 comparisons; C/b20 changes >25% in all groups, so projections use E5. tests/spikes 115 passed + 2 skipped; Ruff and git diff --check clean. Stopped at REVIEW GATE 6.
+2026-10-27  REVIEW GATE 6 accepted by Eyad; Phase 7 started. Live two-file-per-group probe: C/C++/Python all not usable by exact per-file node/edge histograms; mismatches C 56.7%/56.7%, C++ 45.6%/30.9%, Python 32.1%/33.2%; unattributable METHOD counts 1/10/4; cross-file CALL edges 0. Report recommendations fall back to non-batched E3 B; E8 projections use E5 A baseline. Variant D feasibility not evaluated. 118 passed + 2 skipped; Ruff clean. Stopped at REVIEW GATE 7.
 ```
 
 ---
