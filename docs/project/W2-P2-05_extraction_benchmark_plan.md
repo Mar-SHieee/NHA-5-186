@@ -182,9 +182,9 @@ Branch: `w2-p2-extraction-benchmark`. Commits and PR title start with `W2-P2-05:
 ## 5. STATE (update after every step)
 
 ```
-current_phase:      Phase 9 REVIEW GATE 9 (awaiting user confirmation of PR #51)
-last_ticked_step:   9.4
-in_progress:        none; close-out checks and CI passed; waiting at Review Gate 9 before Phase 10
+current_phase:      Phase 10 professor explanation and practice
+last_ticked_step:   10.1
+in_progress:        10.2; exercises provided, continue with the user's attempts and questions
 branch:             w2-p2-extraction-benchmark
 machine:            Windows, 24 logical CPUs, 16 GB RAM (16,907,100,160 B); Docker Desktop (WSL2, no .wslconfig = defaults) sees 24 CPUs and 8,188,317,696 B (~7.6 GiB)
 repo location:      C:\Users\eyada\OneDrive\Desktop\SHIELD  <-- INSIDE OneDrive (see R9: benchmark work dirs must be outside it)
@@ -444,8 +444,8 @@ Steps:
 
 ### Phase 10: Professor explanation (delivered in the chat, after Phase 9)
 
-- [ ] 10.1 Deliver the explanation following Section 10, using the **real numbers** and **real code** of the repo, with worked examples and a critical takeaway per section.
-- [ ] 10.2 Give the user the "write it yourself" exercises (Section 10.3) and answer questions until they can explain each file unaided.
+- [x] 10.1 Deliver the explanation following Section 10, using the **real numbers** and **real code** of the repo, with worked examples and a critical takeaway per section.
+- [~] 10.2 Give the user the "write it yourself" exercises (Section 10.3) and answer questions until they can explain each file unaided.
 
 ---
 
@@ -602,6 +602,7 @@ sequenceDiagram
 2026-10-27  REVIEW GATE 6 accepted by Eyad; Phase 7 started. Live two-file-per-group probe: C/C++/Python all not usable by exact per-file node/edge histograms; mismatches C 56.7%/56.7%, C++ 45.6%/30.9%, Python 32.1%/33.2%; unattributable METHOD counts 1/10/4; cross-file CALL edges 0. Report recommendations fall back to non-batched E3 B; E8 projections use E5 A baseline. Variant D feasibility not evaluated. 118 passed + 2 skipped; Ruff clean. Stopped at REVIEW GATE 7.
 2026-10-27  Phase 8 complete: final report and docs reviewed; `pytest --co -q` reported 821 collected; layout 63 passed; Ruff clean; format clean; full suite 819 passed + 2 skipped after rerun with required temp-file rename access. Root README count and benchmark map updated; D38 remains proposed for P1. Stopped at REVIEW GATE 8.
 2026-10-27  Phase 9 complete: final environment/data checks clean; merged current main and pushed `bc567c8`; opened PR #51 with no reviewers per user; GitHub `lint-and-test` passed, no merge conflicts; updated STATUS and final Section 5 numbers. Waiting at REVIEW GATE 9 before Phase 10. P1 note remains a draft.
+2026-10-27  REVIEW GATE 9 accepted by Eyad. Phase 10.1 explanation delivered in chat with measured examples and code walkthrough; Phase 10.2 exercises assigned and remains in progress pending practice/questions.
 ```
 
 ---
