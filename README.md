@@ -827,7 +827,7 @@ sequenceDiagram
             B->>A: extract(code, language, extension)
             A->>D: docker run + joern-parse + joern-export
         else variants B and C
-            B->>D: one container; emit @@T and @@PEAK markers
+            B->>D: one container; emit timing and peak-memory markers
         end
         D-->>B: output + cgroup peak memory
         B->>B: append results.csv and samples.csv
