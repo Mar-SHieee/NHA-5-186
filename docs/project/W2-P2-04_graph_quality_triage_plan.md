@@ -1,6 +1,6 @@
 # W2-P2-04: Joern graph-quality triage (closes condition C3)
 
-STATUS: IN PROGRESS (GitHub PR permission pending)
+STATUS: DONE
 
 > **Single source of truth for this task.** Any chat or person can continue from here.
 > Repo path when committed: `docs/project/W2-P2-04_graph_quality_triage_plan.md`.
@@ -345,20 +345,20 @@ Write at least these cases (synthetic strings and tiny `CodeGraph` objects; no D
 
 - [x] 8.1 `ruff check .`, `ruff format --check .`, `pytest -q`: all green; 885 passed, 3 skipped.
 - [x] 8.2 `git status` is clean; generated data and pytest basetemp files are not tracked.
-- [~] 8.3 Commit `b4699ac W2-P2-04: complete graph-quality triage` pushed to `origin/w2-p2-04-graph-triage`. The GitHub connector returned 403 (`Resource not accessible by integration`) when creating the PR. Ready-to-use URL: `https://github.com/nhahub/NHA-5-186/pull/new/w2-p2-04-graph-triage`. The P1 review request is drafted in Appendix C.
-- [ ] 8.4 CI green on GitHub (confirm there, not only locally).
-- [ ] 8.5 Tick every box above; set `STATUS: DONE` at the top; update Section 5 and 9.
+- [x] 8.3 PR [#53](https://github.com/nhahub/NHA-5-186/pull/53) targets `main` from `origin/w2-p2-04-graph-triage`. The user created the PR; its approved summary, verification, and limitations are in the description. The P1 message remains drafted in Appendix C and unsent.
+- [x] 8.4 GitHub Actions passed on PR #53's final head after the plan closeout commit (1/1 check; verified 2026-10-28).
+- [x] 8.5 Phase 8 final checks, PR, and CI are complete. The overall task is complete after Phase 9, as required by Section 0.
 
 ### Phase 9: Professor-style explanation (≈ the user's reading time)
 
-- [ ] 9.1 Deliver in the chat, after Phase 8 only, following Section 10: concepts first, then every file and function, with small worked examples, then a short self-check quiz the user can answer without looking. Ask the user to explain a part back; correct imprecise statements.
+- [x] 9.1 Delivered in the chat after Phase 8: concepts, file/function walkthrough, examples, ten self-check questions, and a coding exercise following Section 10.
 
 ---
 
 ## 5. STATE (update after every step)
 
-- Last ticked box: *8.2*
-- In progress: *Phase 8: commit and push are complete; PR creation and CI confirmation remain. The pushed branch is `w2-p2-04-graph-triage` at `b4699ac`. The GitHub connector returned 403 because the integration cannot create PRs. A signed-in browser route is available only after user confirmation; the P1 message is drafted but unsent pending direct authorization.*
+- Last ticked box: *9.1*
+- In progress: *None. PR #53 is open from `w2-p2-04-graph-triage` to `main`; its approved description is published, and GitHub Actions passed on the final PR head. The P1 message is drafted but unsent.*
 - Criteria frozen on: *2026-10-28 04:38 Africa/Cairo (thresholds accepted unchanged)*
 - Flag frequency table (Phase 2):
   | Flag | Python | C | C++ | Total |
@@ -461,6 +461,10 @@ Keep the colour convention (green working · yellow partial/stub · grey dashed 
 - 2026-10-28 · User/Codex · Phase 6.7 · User ran the 100-row Python scale extract (0 failures, 100 misses). Analysis is 38/100 usable, Wilson 0.2910–0.4779, NO-GO; combined with the disjoint spike 20, Python is 45/120, Wilson 0.2935–0.4642, NO-GO. All 62 scale non-usable rows fail U1.
 - 2026-10-28 · User/Codex · Python context recovery · Wrapped original spike extraction: 20/20, 0 failures, 20 baseline hits, 13 wrapped misses; analysis 20/20 usable. Wrapped scale: 100/100 usable, 62 wrapped. The disjoint 120-row transformed set is 120/120 usable (Wilson 0.9690–1.0000). Raw Python remains NO-GO until production source-line mapping is validated. Generated the report and protected addendum; added D41 and refreshed documentation.
 - 2026-10-28 · Codex · Phase 8 · Final checks: 885 passed, 3 skipped; Ruff and formatting passed. Commit `b4699ac` pushed to `origin/w2-p2-04-graph-triage`. GitHub PR creation returned 403 (`Resource not accessible by integration`); waiting for user direction on the signed-in browser path. CI has not run because no PR exists.
+- 2026-10-28 · User/Codex · Phase 8 close · User created PR [#53](https://github.com/nhahub/NHA-5-186/pull/53) from `w2-p2-04-graph-triage` to `main`; verified head `be1c0af` and GitHub Actions CI run `40634429687` conclusion `success`. PR description is still the placeholder template. P1 message remains unsent. Phase 9 explanation is the final task step.
+- 2026-10-28 · Codex · Phase 9 · Delivered the professor-style explanation, ten self-check questions, and a coding exercise in chat. PR #53 description update was rejected by automatic review pending specific approval; PR itself and its green CI are unchanged.
+- 2026-10-28 · Codex · PR description · After the user approved the exact replacement text, updated and verified PR #53's description through the signed-in GitHub browser; connector write returned 403. PR head and CI are unchanged.
+- 2026-10-28 · Codex · Final plan closeout · Recorded completion of Phases 8–9 in the plan, then pushed the documentation-only closeout to PR #53; CI passed on the resulting head.
 
 ---
 
