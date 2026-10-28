@@ -19,7 +19,6 @@ from sklearn.metrics import (
     brier_score_loss,
     f1_score,
     matthews_corrcoef,
-    precision_recall_fscore_support,
     precision_score,
     recall_score,
     roc_auc_score,
@@ -36,6 +35,8 @@ DEFAULT_CONFIG: dict[str, Any] = {
     "language": "python",
     "use_fixed_code_as_negatives": True,
     "min_cwe_count": 20,
+    "binary_target_recall": None,
+    "binary_threshold_metric": "precision_recall_balance",
     "xgb": {
         "n_estimators": 1000,
         "learning_rate": 0.05,
@@ -78,7 +79,10 @@ def load_split(
     missing = required - set(df.columns)
     if missing:
         raise ValueError(f"{path.name} lacks required columns: {sorted(missing)}")
-    df = df[df.language == language].copy()
+    if language != "all":
+        df = df[df.language == language].copy()
+    else:
+        df = df.copy()
     df["cwe"] = df.cwe.map(first_cwe)
     if use_fixed and "code" in df and "fixed_code" in df:
         fixed = df[(df.label == 1) & df.fixed_code.notna() & (df.fixed_code != df.code)].copy()
@@ -117,7 +121,11 @@ def load_precomputed_split(
     if assignment_path and split:
         verify_assignment_order(frame, assignment_path, split)
 
-    keep = frame["language"].eq(language).to_numpy()
+    keep = (
+        np.ones(len(frame), dtype=bool)
+        if language == "all"
+        else frame["language"].eq(language).to_numpy()
+    )
     row_indices = np.flatnonzero(keep)
     frame = frame.loc[keep].copy()
     if "code" in frame:
@@ -239,8 +247,13 @@ def _model(params: dict[str, Any], seed: int, classes: int | None = None) -> XGB
     )
 
 
-def _fit(model, x, y, xv, yv, params):
-    options = {"sample_weight": compute_sample_weight("balanced", y), "verbose": False}
+def _fit(model, x, y, xv, yv, params, sample_groups=None):
+    options = {
+        "sample_weight": compute_sample_weight(
+            "balanced", y if sample_groups is None else sample_groups
+        ),
+        "verbose": 50 if len(y) >= 100_000 else 20 if len(y) >= 10_000 else False,
+    }
     if len(np.unique(yv)) > 1:
         options["eval_set"] = [(xv, yv)]
     else:
@@ -248,17 +261,136 @@ def _fit(model, x, y, xv, yv, params):
     return model.fit(x, y, **options)
 
 
-def _binary_metrics(y: np.ndarray, p: np.ndarray, threshold: float) -> dict[str, Any]:
+def _binary_metrics(y: np.ndarray, p: np.ndarray, threshold: float | np.ndarray) -> dict[str, Any]:
     pred = (p >= threshold).astype(int)
+    precision = float(precision_score(y, pred, zero_division=0))
+    recall = float(recall_score(y, pred, zero_division=0))
     return {
         "roc_auc": float(roc_auc_score(y, p)) if len(np.unique(y)) > 1 else None,
         "pr_auc": float(average_precision_score(y, p)),
-        "precision": float(precision_score(y, pred, zero_division=0)),
-        "recall": float(recall_score(y, pred, zero_division=0)),
+        "precision": precision,
+        "recall": recall,
+        "precision_recall_balance": min(precision, recall),
         "f1": float(f1_score(y, pred, zero_division=0)),
         "mcc": float(matthews_corrcoef(y, pred)),
         "brier": float(brier_score_loss(y, p)),
     }
+
+
+def _metrics_by_language(
+    frames: dict[str, pd.DataFrame],
+    labels: dict[str, np.ndarray],
+    probabilities: dict[str, np.ndarray],
+    thresholds: float | dict[str, float],
+) -> dict[str, dict[str, Any]]:
+    results = {}
+    for language in sorted(set().union(*(set(frame.language) for frame in frames.values()))):
+        results[language] = {}
+        for split, frame in frames.items():
+            mask = frame.language.eq(language).to_numpy()
+            results[language][split] = _binary_metrics(
+                labels[split][mask],
+                probabilities[split][mask],
+                thresholds.get(language, 0.5) if isinstance(thresholds, dict) else thresholds,
+            )
+    return results
+
+
+def _calibrate_by_language(
+    raw,
+    frame,
+    labels,
+    target_recall: float | None = None,
+    metric: str = "f1",
+):
+    calibrators, thresholds, probabilities = {}, {}, np.empty(len(raw), dtype=np.float64)
+    for language in sorted(frame.language.unique()):
+        mask = frame.language.eq(language).to_numpy()
+        calibrator = IsotonicRegression(out_of_bounds="clip").fit(raw[mask], labels[mask])
+        calibrated = calibrator.predict(raw[mask])
+        candidates = np.unique(calibrated)
+        if target_recall is not None:
+            if not 0 < float(target_recall) <= 1:
+                raise ValueError("binary_target_recall must be in (0, 1]")
+            eligible = [
+                value
+                for value in candidates
+                if recall_score(labels[mask], calibrated >= value, zero_division=0)
+                >= float(target_recall)
+            ]
+            # Highest feasible threshold meets the recall target with the fewest
+            # predicted positives, and therefore favors precision within that constraint.
+            threshold = float(max(eligible)) if eligible else float(min(candidates))
+        else:
+            if metric not in {"f1", "mcc", "precision_recall_balance"}:
+                raise ValueError(
+                    "binary_threshold_metric must be 'precision_recall_balance', 'f1', or 'mcc'"
+                )
+
+            language_labels = labels[mask]
+
+            def objective(value, calibrated=calibrated, language_labels=language_labels):
+                predictions = calibrated >= value
+                if metric == "f1":
+                    return f1_score(language_labels, predictions, zero_division=0)
+                if metric == "mcc":
+                    return matthews_corrcoef(language_labels, predictions)
+                precision = precision_score(language_labels, predictions, zero_division=0)
+                recall = recall_score(language_labels, predictions, zero_division=0)
+                harmonic_mean = f1_score(language_labels, predictions, zero_division=0)
+                return (min(precision, recall), harmonic_mean, -abs(precision - recall))
+
+            threshold = float(max(candidates, key=objective))
+        calibrators[language] = calibrator
+        thresholds[language] = threshold
+        probabilities[mask] = calibrated
+    return calibrators, thresholds, probabilities
+
+
+def _language_class_groups(frame, labels):
+    return frame.language.astype(str).to_numpy() + "::" + np.asarray(labels).astype(str)
+
+
+def _publish_run(run_dir: Path, destination: Path) -> None:
+    import hashlib
+    import shutil
+    import zipfile
+
+    destination.mkdir(parents=True, exist_ok=True)
+    for stale in (
+        *destination.glob("leaf_*.json"),
+        *(
+            destination / name
+            for name in (
+                "binary_model.json",
+                "cwe_model.json",
+                "family_model.json",
+                "preprocessing.joblib",
+                "config.json",
+                "metrics.json",
+                "calibration_plot_data.csv",
+                "SHA256SUMS",
+            )
+        ),
+    ):
+        if stale.exists():
+            stale.unlink()
+    for source in run_dir.iterdir():
+        if source.is_file():
+            shutil.copy2(source, destination / source.name)
+    files = sorted(
+        path for path in destination.iterdir() if path.is_file() and path.name != "SHA256SUMS"
+    )
+    sums = "".join(
+        f"{hashlib.sha256(path.read_bytes()).hexdigest()}  {path.name}\n" for path in files
+    )
+    (destination / "SHA256SUMS").write_text(sums, encoding="ascii")
+    bundle = destination.parent / "shield-v1.zip"
+    with zipfile.ZipFile(bundle, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+        for path in files:
+            archive.write(path, path.name)
+        archive.write(destination / "SHA256SUMS", "SHA256SUMS")
+    print(f"Created installer bundle at {bundle}")
 
 
 def run(config: dict[str, Any], *, publish: bool = False) -> Path:
@@ -311,11 +443,27 @@ def run(config: dict[str, Any], *, publish: bool = False) -> Path:
         raise ValueError(
             "Train, validation, and test each need rows after language and leakage filtering"
         )
+    print(
+        "Using rows by split/language: "
+        + json.dumps(
+            {
+                split: frame.language.value_counts().sort_index().astype(int).to_dict()
+                for split, frame in data.items()
+            }
+        ),
+        flush=True,
+    )
 
     if not precomputed:
         embedder = _embedder(config)
         matrices = {name: embedding_matrix(df, name, config, embedder) for name, df in data.items()}
     y = {name: df.label.to_numpy(dtype=np.int32) for name, df in data.items()}
+    print(f"Fitting binary head on {len(y['train']):,} training rows", flush=True)
+    binary_groups = (
+        _language_class_groups(data["train"], y["train"])
+        if config.get("balance_languages", False)
+        else None
+    )
     binary = _fit(
         _model(config["xgb"], config["seed"]),
         matrices["train"],
@@ -323,6 +471,7 @@ def run(config: dict[str, Any], *, publish: bool = False) -> Path:
         matrices["val"],
         y["val"],
         config["xgb"],
+        binary_groups,
     )
     val_raw = binary.predict_proba(matrices["val"])[:, 1]
     test_raw = binary.predict_proba(matrices["test"])[:, 1]
@@ -330,73 +479,209 @@ def run(config: dict[str, Any], *, publish: bool = False) -> Path:
     val_prob, test_prob = calibrator.predict(val_raw), calibrator.predict(test_raw)
     thresholds = np.unique(np.quantile(val_prob, np.linspace(0.01, 0.99, 99)))
     threshold = float(max(thresholds, key=lambda t: matthews_corrcoef(y["val"], val_prob >= t)))
-    validation_metrics = _binary_metrics(y["val"], val_prob, threshold)
-    binary_metrics = _binary_metrics(y["test"], test_prob, threshold)
+    language_calibrators, language_thresholds, val_language_prob = _calibrate_by_language(
+        val_raw,
+        data["val"],
+        y["val"],
+        config.get("binary_target_recall"),
+        config.get("binary_threshold_metric", "f1"),
+    )
+    test_language_prob = np.empty(len(test_raw), dtype=np.float64)
+    for language, language_calibrator in language_calibrators.items():
+        mask = data["test"].language.eq(language).to_numpy()
+        test_language_prob[mask] = language_calibrator.predict(test_raw[mask])
+    val_thresholds = data["val"].language.map(language_thresholds).to_numpy(dtype=np.float64)
+    test_thresholds = data["test"].language.map(language_thresholds).to_numpy(dtype=np.float64)
+    validation_metrics = _binary_metrics(y["val"], val_language_prob, val_thresholds)
+    binary_metrics = _binary_metrics(y["test"], test_language_prob, test_thresholds)
+    language_metrics = {
+        "validation": _metrics_by_language(
+            {"validation": data["val"]},
+            {"validation": y["val"]},
+            {"validation": val_language_prob},
+            language_thresholds,
+        ),
+        "test": _metrics_by_language(
+            {"test": data["test"]},
+            {"test": y["test"]},
+            {"test": test_language_prob},
+            language_thresholds,
+        ),
+    }
 
+    # Hierarchical CWE head: predict a broad internal family, then classify the CWE
+    # within that family. The API still returns a real CWE ID or None.
+    family_map_path = _path(config.get("cwe_family_map", "scripts/training/cwe_family_map.json"))
+    family_spec = json.loads(family_map_path.read_text(encoding="utf-8"))
+    cwe_to_family = family_spec["cwe_to_family"]
+    fallback_family = family_spec.get("fallback_family", "other")
     cwe_train_mask = (y["train"] == 1) & data["train"].cwe.notna().to_numpy()
     cwe_val_mask = (y["val"] == 1) & data["val"].cwe.notna().to_numpy()
     cwe_test_mask = (y["test"] == 1) & data["test"].cwe.notna().to_numpy()
     if cwe_train_mask.sum() == 0:
-        raise ValueError("No labeled vulnerable training rows are available for the CWE head")
-    counts = data["train"].loc[cwe_train_mask, "cwe"].value_counts()
-    classes = sorted(counts[counts >= int(config["min_cwe_count"])].index.tolist())
-    if not classes:
-        raise ValueError("No CWE reaches min_cwe_count; lower it only with a documented reason")
-    classes.append("Other")
-    to_ids = {name: index for index, name in enumerate(classes)}
-
-    def cwe_ids(frame, mask):
-        return (
-            frame.loc[mask, "cwe"]
-            .map(lambda x: to_ids.get(x, to_ids["Other"]))
-            .to_numpy(dtype=np.int32)
+        raise ValueError("No labeled vulnerable training rows are available for the CWE heads")
+    for split in data:
+        data[split]["cwe_family"] = data[split].cwe.map(
+            lambda cwe: cwe_to_family.get(cwe, fallback_family) if isinstance(cwe, str) else None
         )
+    cwe_params = config.get("cwe_xgb", config["xgb"])
+    family_names = sorted(data["train"].loc[cwe_train_mask, "cwe_family"].dropna().unique())
+    family_ids = {name: idx for idx, name in enumerate(family_names)}
 
-    yc_train = cwe_ids(data["train"], cwe_train_mask)
-    yc_val = cwe_ids(data["val"], cwe_val_mask)
-    yc_test = cwe_ids(data["test"], cwe_test_mask)
-    if len(np.unique(yc_train)) < 2:
-        raise ValueError("CWE head needs at least two training classes")
-    cwe_model = _fit(
-        _model(config["xgb"], config["seed"], len(classes)),
+    def fit_multiclass_head(train_x, train_labels, val_x, val_labels, groups=None):
+        classes = sorted(set(train_labels.tolist()))
+        if len(classes) == 1:
+            return {"constant": classes[0], "classes": classes}
+        remap = {label: i for i, label in enumerate(classes)}
+        ytr = np.asarray([remap[item] for item in train_labels], dtype=np.int32)
+        yva = np.asarray([remap.get(item, 0) for item in val_labels], dtype=np.int32)
+        model = _fit(
+            _model(cwe_params, config["seed"], len(classes)),
+            train_x,
+            ytr,
+            val_x,
+            yva,
+            cwe_params,
+            groups,
+        )
+        return {"model": model, "classes": classes}
+
+    family_train = data["train"].loc[cwe_train_mask, "cwe_family"].map(family_ids).to_numpy()
+    family_val_mask = cwe_val_mask & data["val"].cwe_family.isin(family_ids).to_numpy()
+    family_val = data["val"].loc[family_val_mask, "cwe_family"].map(family_ids).to_numpy()
+    family_groups = (
+        _language_class_groups(data["train"].loc[cwe_train_mask], family_train)
+        if config.get("balance_languages", False)
+        else None
+    )
+    family_head = fit_multiclass_head(
         matrices["train"][cwe_train_mask],
-        yc_train,
-        matrices["val"][cwe_val_mask],
-        yc_val,
-        config["xgb"],
+        family_train,
+        matrices["val"][family_val_mask],
+        family_val,
+        family_groups,
+    )
+    min_count = int(config["min_cwe_count"])
+    leaf_heads = {}
+    leaf_labels = {}
+    train_cwes = data["train"].loc[cwe_train_mask, "cwe"]
+    supported = set(train_cwes.value_counts().loc[lambda counts: counts >= min_count].index)
+    for family in family_names:
+        fam_train_mask = cwe_train_mask & data["train"].cwe_family.eq(family).to_numpy()
+        fam_val_mask = cwe_val_mask & data["val"].cwe_family.eq(family).to_numpy()
+        raw_train = (
+            data["train"]
+            .loc[fam_train_mask, "cwe"]
+            .map(lambda cwe: cwe if cwe in supported else "Other")
+            .to_numpy()
+        )
+        raw_val = (
+            data["val"]
+            .loc[fam_val_mask, "cwe"]
+            .map(lambda cwe: cwe if cwe in supported else "Other")
+            .to_numpy()
+        )
+        groups = (
+            _language_class_groups(data["train"].loc[fam_train_mask], raw_train)
+            if config.get("balance_languages", False)
+            else None
+        )
+        leaf_heads[family] = fit_multiclass_head(
+            matrices["train"][fam_train_mask],
+            raw_train,
+            matrices["val"][fam_val_mask],
+            raw_val,
+            groups,
+        )
+        leaf_labels[family] = leaf_heads[family]["classes"]
+
+    def predict_head(head, features):
+        if "constant" in head:
+            return np.repeat(head["constant"], len(features))
+        ids = head["model"].predict(features).astype(int)
+        return np.asarray(head["classes"], dtype=object)[ids]
+
+    def predict_hierarchical(features):
+        family_pred = predict_head(family_head, features).astype(int)
+        labels = np.full(len(features), "Other", dtype=object)
+        for family, family_id in family_ids.items():
+            mask = family_pred == family_id
+            if mask.any():
+                labels[mask] = predict_head(leaf_heads[family], features[mask])
+        return labels
+
+    test_rows = data["test"].loc[cwe_test_mask]
+    true_test_cwes = test_rows.cwe.map(lambda cwe: cwe if cwe in supported else "Other").to_numpy()
+    pred_cwes = (
+        predict_hierarchical(matrices["test"][cwe_test_mask])
+        if cwe_test_mask.any()
+        else np.array([])
     )
     cwe_metrics = {}
-    if len(yc_test):
-        pred = cwe_model.predict(matrices["test"][cwe_test_mask]).astype(int)
-        class_precision, class_recall, class_f1, class_support = precision_recall_fscore_support(
-            yc_test, pred, labels=np.arange(len(classes)), zero_division=0
-        )
+    cwe_language_metrics = {}
+    if len(true_test_cwes):
         cwe_metrics = {
-            "accuracy": float(accuracy_score(yc_test, pred)),
-            "macro_f1": float(f1_score(yc_test, pred, average="macro", zero_division=0)),
-            "weighted_f1": float(f1_score(yc_test, pred, average="weighted", zero_division=0)),
-            "support": int(len(yc_test)),
-            "classes": len(classes),
-            "per_cwe": {
-                label: {
-                    "precision": float(class_precision[index]),
-                    "recall": float(class_recall[index]),
-                    "f1": float(class_f1[index]),
-                    "support": int(class_support[index]),
-                }
-                for index, label in enumerate(classes)
-            },
+            "accuracy": float(accuracy_score(true_test_cwes, pred_cwes)),
+            "macro_f1": float(
+                f1_score(true_test_cwes, pred_cwes, average="macro", zero_division=0)
+            ),
+            "weighted_f1": float(
+                f1_score(true_test_cwes, pred_cwes, average="weighted", zero_division=0)
+            ),
+            "support": int(len(true_test_cwes)),
+            "classes": int(len(set(true_test_cwes))),
         }
+        langs = test_rows.language.to_numpy()
+        for language in sorted(set(langs)):
+            mask = langs == language
+            cwe_language_metrics[language] = {
+                "accuracy": float(accuracy_score(true_test_cwes[mask], pred_cwes[mask])),
+                "macro_f1": float(
+                    f1_score(
+                        true_test_cwes[mask], pred_cwes[mask], average="macro", zero_division=0
+                    )
+                ),
+                "weighted_f1": float(
+                    f1_score(
+                        true_test_cwes[mask], pred_cwes[mask], average="weighted", zero_division=0
+                    )
+                ),
+                "support": int(mask.sum()),
+            }
 
     stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     run_dir = _path(f"model_artifacts/train_runs/xgboost_codebert_v1_{stamp}")
     run_dir.mkdir(parents=True, exist_ok=False)
     binary.save_model(str(run_dir / "binary_model.json"))
-    cwe_model.save_model(str(run_dir / "cwe_model.json"))
+    if "model" in family_head:
+        family_head["model"].save_model(str(run_dir / "family_model.json"))
+    leaf_model_classes = {}
+    for idx, family in enumerate(family_names):
+        head = leaf_heads[family]
+        if "model" in head:
+            filename = f"leaf_{idx}.json"
+            head["model"].save_model(str(run_dir / filename))
+            leaf_model_classes[family] = filename
     import joblib
 
     joblib.dump(
-        {"calibrator": calibrator, "threshold": threshold, "cwe_classes": classes},
+        {
+            "calibrator": calibrator,
+            "threshold": threshold,
+            "calibrators_by_language": language_calibrators,
+            "thresholds_by_language": language_thresholds,
+            "cwe_classes": [],
+            "family_classes": family_names,
+            "family_constant": family_head.get("constant"),
+            "leaf_heads": {
+                family: {
+                    "classes": leaf_heads[family]["classes"],
+                    "constant": leaf_heads[family].get("constant"),
+                    "file": leaf_model_classes.get(family),
+                }
+                for family in family_names
+            },
+        },
         run_dir / "preprocessing.joblib",
     )
     config["features"] = "codebert_window_embeddings"
@@ -419,9 +704,19 @@ def run(config: dict[str, Any], *, publish: bool = False) -> Path:
         "binary_validation": validation_metrics,
         "binary_test": binary_metrics,
         "threshold": threshold,
+        "thresholds_by_language": language_thresholds,
+        "binary_target_recall": config.get("binary_target_recall"),
+        "binary_threshold_metric": config.get("binary_threshold_metric", "f1"),
         "cwe_test": cwe_metrics,
+        "binary_by_language": language_metrics,
+        "cwe_test_by_language": cwe_language_metrics,
         "rows": {k: len(v) for k, v in data.items()},
-        "cwe_classes": classes,
+        "rows_by_language": {
+            split: frame.language.value_counts().sort_index().astype(int).to_dict()
+            for split, frame in data.items()
+        },
+        "cwe_classes": sorted(supported),
+        "families": family_names,
     }
     (run_dir / "metrics.json").write_text(
         json.dumps(scores, indent=2, allow_nan=False), encoding="utf-8"
@@ -441,22 +736,16 @@ def run(config: dict[str, Any], *, publish: bool = False) -> Path:
         "binary_validation": scores["binary_validation"],
         "binary_test": scores["binary_test"],
         "cwe_test": {k: v for k, v in scores["cwe_test"].items() if k != "per_cwe"},
+        "cwe_test_by_language": scores["cwe_test_by_language"],
         "rows": scores["rows"],
+        "rows_by_language": scores["rows_by_language"],
+        "binary_by_language": scores["binary_by_language"],
     }
     print(json.dumps(summary, indent=2, allow_nan=False))
 
     if publish:
         v1_dir = _path("model_artifacts/v1")
-        v1_dir.mkdir(parents=True, exist_ok=True)
-        for name in (
-            "binary_model.json",
-            "cwe_model.json",
-            "preprocessing.joblib",
-            "config.json",
-            "metrics.json",
-            "calibration_plot_data.csv",
-        ):
-            (v1_dir / name).write_bytes((run_dir / name).read_bytes())
+        _publish_run(run_dir, v1_dir)
         print(f"Published registry artifact to {v1_dir}")
     try:
         import mlflow
@@ -469,6 +758,7 @@ def run(config: dict[str, Any], *, publish: bool = False) -> Path:
                     "seed": config["seed"],
                     "manifest_version": config["manifest_version"],
                     **config["xgb"],
+                    **{f"cwe_{k}": v for k, v in config.get("cwe_xgb", {}).items()},
                 }
             )
             mlflow.log_metrics(
@@ -494,6 +784,9 @@ def main(argv: list[str] | None = None) -> int:
         "--grid", help="JSON object of XGBoost param -> list of values; runs full Cartesian grid"
     )
     parser.add_argument(
+        "--grid-file", help="path to a JSON file containing XGBoost parameter lists"
+    )
+    parser.add_argument(
         "--publish",
         action="store_true",
         help="copy this run to model_artifacts/v1 for registry use",
@@ -507,7 +800,15 @@ def main(argv: list[str] | None = None) -> int:
                 config[key].update(value)
             else:
                 config[key] = value
-    grid = json.loads(args.grid) if args.grid else {}
+    if args.grid and args.grid_file:
+        parser.error("pass either --grid or --grid-file, not both")
+    grid = (
+        json.loads(Path(args.grid_file).read_text(encoding="utf-8"))
+        if args.grid_file
+        else json.loads(args.grid)
+        if args.grid
+        else {}
+    )
     keys = list(grid)
     trials = itertools.product(*(grid[k] for k in keys)) if keys else [()]
     best = None
@@ -515,6 +816,7 @@ def main(argv: list[str] | None = None) -> int:
     for values in trials:
         trial = json.loads(json.dumps(config))
         trial["xgb"].update(dict(zip(keys, values, strict=True)))
+        print(f"Starting grid run with XGBoost parameters: {trial['xgb']}", flush=True)
         run_dir = run(trial, publish=False)
         scores = json.loads((run_dir / "metrics.json").read_text(encoding="utf-8"))
         saved_config = json.loads((run_dir / "config.json").read_text(encoding="utf-8"))
@@ -524,6 +826,14 @@ def main(argv: list[str] | None = None) -> int:
         }
         comparison.update({f"val_{k}": v for k, v in scores["binary_validation"].items()})
         comparison.update({f"test_{k}": v for k, v in scores["binary_test"].items()})
+        for split, languages in scores["binary_by_language"].items():
+            comparison.update(
+                {
+                    f"{split}_{language}_{metric}": value
+                    for language, metrics in languages.items()
+                    for metric, value in metrics.items()
+                }
+            )
         comparison.update(
             {
                 f"cwe_{k}": v
@@ -532,30 +842,28 @@ def main(argv: list[str] | None = None) -> int:
             }
         )
         comparisons.append(comparison)
-        mcc = scores["binary_validation"]["mcc"]
+        selection_metric = config.get("binary_threshold_metric", "f1")
+        language_scores = [
+            item["validation"][selection_metric]
+            for item in scores["binary_by_language"]["validation"].values()
+        ]
+        selection_score = float(np.mean(language_scores))
+        comparison[f"validation_macro_language_{selection_metric}"] = selection_score
         test_mcc = scores["binary_test"]["mcc"]
-        print(f"Run: {run_dir} | validation MCC={mcc:.4f} | test MCC={test_mcc:.4f}")
-        if best is None or mcc > best[0]:
-            best = (mcc, run_dir)
+        print(
+            f"Run: {run_dir} | macro validation {selection_metric}={selection_score:.4f} "
+            f"| pooled test MCC={test_mcc:.4f}"
+        )
+        if best is None or selection_score > best[0]:
+            best = (selection_score, run_dir)
     if best:
-        print(f"Best validation MCC={best[0]:.4f}: {best[1]}")
+        print(f"Best validation score={best[0]:.4f}: {best[1]}")
         summary_path = _path("model_artifacts/train_runs/v1_grid_comparison.csv")
         pd.DataFrame(comparisons).to_csv(summary_path, index=False)
         print(f"Grid comparison: {summary_path}")
         if args.publish:
-            import shutil
-
             destination = _path("model_artifacts/v1")
-            destination.mkdir(parents=True, exist_ok=True)
-            for name in (
-                "binary_model.json",
-                "cwe_model.json",
-                "preprocessing.joblib",
-                "config.json",
-                "metrics.json",
-                "calibration_plot_data.csv",
-            ):
-                shutil.copy2(best[1] / name, destination / name)
+            _publish_run(best[1], destination)
             print(f"Published best validation run to {destination}")
     return 0
 
