@@ -1,6 +1,6 @@
 # W2-P2-04: Joern graph-quality triage (closes condition C3)
 
-STATUS: IN PROGRESS (Python context recovery experiment)
+STATUS: IN PROGRESS (GitHub PR permission pending)
 
 > **Single source of truth for this task.** Any chat or person can continue from here.
 > Repo path when committed: `docs/project/W2-P2-04_graph_quality_triage_plan.md`.
@@ -174,7 +174,7 @@ Each phase ends with a **REVIEW GATE**: show what changed, run the tests, wait f
 - [x] 0.3 Checked evidence: 60 sample directories; audit/results CSVs and all three source parquet files exist; Docker ran the spike successfully.
 - [x] 0.4 Spike regenerated from the existing 20-row Python, C, and C++ parquet files; the audit reproduces 47/60 with DDG nodes and 30/60 flagged.
 - [x] 0.5 Baseline checks pass before implementation: pytest with a workspace-local basetemp (831 passed, 3 skipped), `ruff check .`, and `ruff format --check .`. The default OS temp path had sandbox rename errors.
-- [ ] 0.6 Add this file to the repo at `docs/project/W2-P2-04_graph_quality_triage_plan.md`. Commit `W2-P2-04: add triage plan`.
+- [x] 0.6 Added this plan to `docs/project/W2-P2-04_graph_quality_triage_plan.md`; included in commit `b4699ac W2-P2-04: complete graph-quality triage`.
 
 **REVIEW GATE 0:** user confirms the evidence folder exists (or has been regenerated).
 
@@ -246,7 +246,7 @@ Needs Docker. Uses the existing extractor and cache; **no change to `shield_core
   Columns printed: id, nodes, REACHING_DEF edges, UNKNOWN nodes.
 - [x] 4.3 Verified every spike `sample.<ext>` against its `Sample.sha256` after newline normalization: 60/60 match.
 - [ ] 4.4 **Early answer to P1 (clearly labelled PRELIMINARY).** Review the draft and send it after approval. Python is 7/20 (NO-GO); C++ is 17/20 (GO). The legacy C-labelled 13/20 result is not a valid C verdict: the spike source is BigVul, whose rows are all metadata-labeled `cpp`. A verified-C scale check is required because C is needed for interprocedural tainting; final report and manual review follow.
-- [ ] 4.5 Commit `W2-P2-04: add JOERN_TRIAGE_DIR path`.
+- [x] 4.5 `JOERN_TRIAGE_DIR` path change committed in `b4699ac W2-P2-04: complete graph-quality triage`.
 
 **REVIEW GATE 4:** user sees the table, agrees what the preliminary message to P1 says, sends it.
 
@@ -344,8 +344,8 @@ Write at least these cases (synthetic strings and tiny `CodeGraph` objects; no D
 ### Phase 8: Final checks and close (≈ 0.5 h)
 
 - [x] 8.1 `ruff check .`, `ruff format --check .`, `pytest -q`: all green; 885 passed, 3 skipped.
-- [x] 8.2 `git status` shows no data files staged (`data/` is git-ignored); code, tests and docs are the only pending workspace changes.
-- [ ] 8.3 Commit(s) with the `W2-P2-04:` prefix; push `w2-p2-04-graph-triage`; open a PR (reviewer P1); the PR text lists: verdicts, the stub rule, what was *not* verified, test count.
+- [x] 8.2 `git status` is clean; generated data and pytest basetemp files are not tracked.
+- [~] 8.3 Commit `b4699ac W2-P2-04: complete graph-quality triage` pushed to `origin/w2-p2-04-graph-triage`. The GitHub connector returned 403 (`Resource not accessible by integration`) when creating the PR. Ready-to-use URL: `https://github.com/nhahub/NHA-5-186/pull/new/w2-p2-04-graph-triage`. The P1 review request is drafted in Appendix C.
 - [ ] 8.4 CI green on GitHub (confirm there, not only locally).
 - [ ] 8.5 Tick every box above; set `STATUS: DONE` at the top; update Section 5 and 9.
 
@@ -358,7 +358,7 @@ Write at least these cases (synthetic strings and tiny `CodeGraph` objects; no D
 ## 5. STATE (update after every step)
 
 - Last ticked box: *8.2*
-- In progress: *Review Gate 7: user review of the Phase 7 documentation diff. Phase 8 local checks are complete; commit/push/PR wait until the reviewed diff is accepted. P1 message is drafted but unsent pending direct authorization. Phase 0.6 and 4.5 commits remain pending.*
+- In progress: *Phase 8: commit and push are complete; PR creation and CI confirmation remain. The pushed branch is `w2-p2-04-graph-triage` at `b4699ac`. The GitHub connector returned 403 because the integration cannot create PRs. A signed-in browser route is available only after user confirmation; the P1 message is drafted but unsent pending direct authorization.*
 - Criteria frozen on: *2026-10-28 04:38 Africa/Cairo (thresholds accepted unchanged)*
 - Flag frequency table (Phase 2):
   | Flag | Python | C | C++ | Total |
@@ -384,8 +384,8 @@ Write at least these cases (synthetic strings and tiny `CodeGraph` objects; no D
 - Per-language result after manual review and user-requested Python scale: Python *7/20 original; 38/100 scale; 45/120 combined, 0.2935–0.4642, NO-GO* · verified C *95/100, 0.8882–0.9785, GO* · C++ *17/20, 0.6396–0.9476, GO*. The legacy C-labelled 20 (13/20) are all metadata `cpp` and are not combined with verified C.
 - Stub rule chosen: *Rule A (provisional). Rule B loses REACHING_DEF/CFG edges for verified C (4,426/2,215), Python (225/116), and C++ (264/144); Python components worsen in 13/20 samples. No dropped METHODs have text. Wrappers have line 1, so B retains them. Python also has line-less operator METHODs, contradicting H6.*
 - Test count before / after: *831 passed, 3 skipped (workspace-local basetemp; default OS temp path caused 6 sandbox rename errors)* / *current: 885 passed, 3 skipped; `tests/spikes` 171 passed, 2 skipped; layout 64 passed; Ruff check and format pass*
-- PR: *none*
-- Open questions for the user: *Review the Phase 7 document diff. Authorize sending the prepared summary to P1 if desired. The wrapper experiment changes parser line positions and is not a production fix until offset mapping is verified. Phase 0.6 and 4.5 commits remain pending because prior sandbox attempts to write `.git/index.lock` were denied.*
+- PR: *not created; GitHub connector permission error (403). Pushed branch and PR creation link: `https://github.com/nhahub/NHA-5-186/pull/new/w2-p2-04-graph-triage`*
+- Open questions for the user: *Authorize PR creation in GitHub's signed-in browser if you want me to complete it. Direct authorization is also needed to send the prepared message to P1. The wrapper experiment changes parser line positions and is not a production fix until offset mapping is verified.*
 
 ---
 
@@ -460,6 +460,7 @@ Keep the colour convention (green working · yellow partial/stub · grey dashed 
 - 2026-10-28 · Codex · Phase 6 complete · Corrected C analysis: 95/100 usable, 95% Wilson 0.8882–0.9785, GO. Reviewed all five failures and five seeded usable controls; review sheet has 41 rows and 36/36 cause-coded agreement. Rule A selected provisionally from per-language Rule B edge-loss and component evidence. Waiting at Review Gate 6.
 - 2026-10-28 · User/Codex · Phase 6.7 · User ran the 100-row Python scale extract (0 failures, 100 misses). Analysis is 38/100 usable, Wilson 0.2910–0.4779, NO-GO; combined with the disjoint spike 20, Python is 45/120, Wilson 0.2935–0.4642, NO-GO. All 62 scale non-usable rows fail U1.
 - 2026-10-28 · User/Codex · Python context recovery · Wrapped original spike extraction: 20/20, 0 failures, 20 baseline hits, 13 wrapped misses; analysis 20/20 usable. Wrapped scale: 100/100 usable, 62 wrapped. The disjoint 120-row transformed set is 120/120 usable (Wilson 0.9690–1.0000). Raw Python remains NO-GO until production source-line mapping is validated. Generated the report and protected addendum; added D41 and refreshed documentation.
+- 2026-10-28 · Codex · Phase 8 · Final checks: 885 passed, 3 skipped; Ruff and formatting passed. Commit `b4699ac` pushed to `origin/w2-p2-04-graph-triage`. GitHub PR creation returned 403 (`Resource not accessible by integration`); waiting for user direction on the signed-in browser path. CI has not run because no PR exists.
 
 ---
 
