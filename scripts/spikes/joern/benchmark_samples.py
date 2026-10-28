@@ -11,6 +11,7 @@ size statistics (they go into the plan's STATE and into the report).
 
 from __future__ import annotations
 
+import ast
 import csv
 import warnings
 from collections import defaultdict
@@ -32,6 +33,7 @@ SOURCES = {
 }
 SPIKE_FILES = {g: fname for g, (_, fname) in SOURCES.items()}
 DEDUPED_FILES = {g: f"{src}_deduped.parquet" for g, (src, _) in SOURCES.items()}
+C_LANGUAGE_SOURCE = "cvefixes_cpp.parquet"
 
 SPIKE_SEED_NOTE = "spike rows keep the order of their parquet file"
 DEFAULT_SCALE_SEED = 43  # the spike used 42; a different seed keeps the draw independent
@@ -139,6 +141,96 @@ def draw_scale_samples(
                 )
             )
     return samples
+
+
+def draw_c_scale_samples(
+    n: int = 100,
+    seed: int = DEFAULT_SCALE_SEED,
+    exclude_sha: Collection[str] = frozenset(),
+    interim_dir: Path = INTERIM_DIR,
+) -> list[Sample]:
+    """Draw unique C-labeled CVEFixes rows; BigVul's language labels are all C++."""
+    path = Path(interim_dir) / C_LANGUAGE_SOURCE
+    if not path.exists():
+        raise FileNotFoundError(f"{path} is missing: rebuild the CVEFixes C/C++ dataset first")
+
+    frame = pd.read_parquet(path, columns=["code", "language"])
+    order = np.random.RandomState(seed).permutation(len(frame))
+    excluded = set(exclude_sha)
+    picked: list[Sample] = []
+    for position in order:
+        index = int(position)
+        code = frame.code.iloc[index]
+        if frame.language.iloc[index] != "c" or not _is_usable(code):
+            continue
+        candidate = Sample("", "c", ".c", code, "scale", "cvefixes_cpp", index)
+        if candidate.sha256 in excluded:
+            continue
+        excluded.add(candidate.sha256)
+        picked.append(candidate)
+        if len(picked) == n:
+            break
+
+    if len(picked) < n:
+        warnings.warn(
+            f"c: only {len(picked)} unique C-labeled rows available, wanted {n}",
+            UserWarning,
+            stacklevel=2,
+        )
+    return [
+        Sample(
+            f"c_scale_{number:03d}",
+            sample.group,
+            sample.extension,
+            sample.code,
+            sample.set_name,
+            sample.source,
+            sample.row_index,
+        )
+        for number, sample in enumerate(picked, start=1)
+    ]
+
+
+def wrap_indented_python_method_snippets(samples: Sequence[Sample]) -> list[Sample]:
+    """Restore a synthetic class around method excerpts whose original indentation is intact."""
+    prepared: list[Sample] = []
+    for sample in samples:
+        if sample.group != "python":
+            prepared.append(sample)
+            continue
+        try:
+            ast.parse(sample.code)
+        except SyntaxError:
+            first_line = next((line for line in sample.code.splitlines() if line.strip()), "")
+            if not first_line[:1].isspace():
+                prepared.append(sample)
+                continue
+            wrapped_code = f"class __ShieldSnippet__:\n{sample.code}"
+            try:
+                module = ast.parse(wrapped_code)
+            except SyntaxError:
+                prepared.append(sample)
+                continue
+            if not isinstance(module.body[0], ast.ClassDef) or not any(
+                isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+                for node in module.body[0].body
+            ):
+                prepared.append(sample)
+                continue
+            prepared.append(
+                Sample(
+                    sample.sample_id,
+                    sample.group,
+                    sample.extension,
+                    wrapped_code,
+                    sample.set_name,
+                    f"{sample.source}+synthetic-class-wrapper",
+                    sample.row_index,
+                )
+            )
+        else:
+            prepared.append(sample)
+    return prepared
 
 
 def write_job_dir(job_dir: Path, samples: Sequence[Sample]) -> list[Path]:

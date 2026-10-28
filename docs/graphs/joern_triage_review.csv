@@ -1,0 +1,42 @@
+sample_id,language,auto_cause,human_cause,agrees,evidence
+python_spike_001,python,INPUT_FRAGMENT,INPUT_FRAGMENT,Y,Indented method starts at line 1; Joern emitted ParseException nodes and no real METHOD.
+python_spike_003,python,INPUT_FRAGMENT,INPUT_FRAGMENT,Y,Lines 1–14 are an indented test method using self; enclosing test class/context is absent.
+python_spike_004,python,INPUT_FRAGMENT,INPUT_FRAGMENT,Y,Line 1 is an indented async method; no enclosing class/module context in the sample.
+python_spike_005,python,INPUT_FRAGMENT,INPUT_FRAGMENT,Y,Lines 1–17 are an indented test method using self and _LinkMap fixtures; enclosing class is absent.
+python_spike_006,python,AUDIT_ARTIFACT,AUDIT_ARTIFACT,Y,"UNKNOWN parse-error nodes are 2/592 (0.34%); the real method, CFG, and flow edges pass U1–U4."
+python_spike_007,python,AUDIT_ARTIFACT,AUDIT_ARTIFACT,Y,"UNKNOWN call placeholders at lines 55, 87, 95 are 3/516 (0.58%); graph passes U1–U4."
+python_spike_009,python,AUDIT_ARTIFACT,AUDIT_ARTIFACT,Y,Parse-error UNKNOWN nodes are 5/342 (1.46%); a real method and required graph edges remain; U1–U4 pass.
+python_spike_010,python,INPUT_FRAGMENT,INPUT_FRAGMENT,Y,Lines 1–2 are an indented self method with no class context; Joern has no real METHOD.
+python_spike_011,python,INPUT_FRAGMENT,INPUT_FRAGMENT,Y,Lines 1–18 are an indented self method and docstring excerpt; enclosing class context is absent.
+python_spike_012,python,INPUT_FRAGMENT,INPUT_FRAGMENT,Y,Lines 1–19 are an indented test method using self/get_client and framework fixtures; class context is absent.
+python_spike_013,python,INPUT_FRAGMENT,INPUT_FRAGMENT,Y,Line 1 begins an indented request method; source is a method excerpt rather than a complete Python module.
+python_spike_014,python,AUDIT_ARTIFACT,AUDIT_ARTIFACT,Y,Two UNKNOWN iteratorNonEmptyOrException placeholders are 2/170 (1.18%); graph passes U1–U4.
+python_spike_015,python,INPUT_FRAGMENT,INPUT_FRAGMENT,Y,Lines 1–16 are an indented test method using self.sock/connect; enclosing test class is absent.
+python_spike_016,python,INPUT_FRAGMENT,INPUT_FRAGMENT,Y,Lines 1–12 are an indented self method referring to action/request/super; class context is absent.
+python_spike_017,python,INPUT_FRAGMENT,INPUT_FRAGMENT,Y,Lines 1–7 are an indented test method using UserObject/listener fixtures; enclosing class is absent.
+python_spike_019,python,INPUT_FRAGMENT,INPUT_FRAGMENT,Y,Lines 1–4 are an indented test method using Retry; the test class/module context is absent.
+python_spike_020,python,INPUT_FRAGMENT,INPUT_FRAGMENT,Y,Lines 1–3 are an indented test method using subscription/utils fixtures; enclosing class is absent.
+c_spike_001,c,INPUT_FRAGMENT,INPUT_FRAGMENT,Y,Line 1 defines RenderViewHostImpl::OnShowPopup (C++ :: member syntax) in a .c sample; class context is absent.
+c_spike_002,c,INPUT_FRAGMENT,INPUT_FRAGMENT,Y,Line 1 defines SoftAVCEncoder::initEncParams (C++ :: member syntax); .c label and class context are missing.
+c_spike_003,c,INPUT_FRAGMENT,INPUT_FRAGMENT,Y,Line 1 is a C++ destructor (~RangeTransactionServer); no class declaration/context is in this .c sample.
+c_spike_004,c,INPUT_FRAGMENT,INPUT_FRAGMENT,Y,Line 1 defines AutoFillManager::OnInfoBarClosed (C++ :: member syntax) without its class context.
+c_spike_013,c,INPUT_FRAGMENT,INPUT_FRAGMENT,Y,Line 1 defines Element::webkitRequestPointerLock (C++ :: member syntax) in a .c sample.
+c_spike_015,c,AUDIT_ARTIFACT,AUDIT_ARTIFACT,Y,"UNKNOWN is the R_API macro at line 1 (1/132, 0.76%); method, CFG, and reaching definitions pass U1–U4."
+c_spike_016,c,INPUT_FRAGMENT,INPUT_FRAGMENT,Y,Line 1 uses v8:: C++ types in a .c sample; API/class declarations and translation-unit context are absent.
+c_spike_018,c,INPUT_FRAGMENT,INPUT_FRAGMENT,Y,Line 1 defines omx_vdec::handle_extradata (C++ :: member syntax) in a .c sample.
+c_spike_014,c,EXPECTED_NO_FLOW,EXPECTED_NO_FLOW,Y,"Lines 1–2 are an empty constructor; no inputs, definitions, or value uses exist (seeded usable control)."
+cpp_spike_003,cpp,EXPECTED_NO_FLOW,EXPECTED_NO_FLOW,Y,Lines 1–4 return sizeof(ma_context); there is no tracked input/value flow (seeded usable control).
+cpp_spike_005,cpp,INPUT_FRAGMENT,INPUT_FRAGMENT,Y,Lines 1–8 call NBAP dissectors/types supplied by external headers; required translation-unit context is absent.
+cpp_spike_006,cpp,AUDIT_ARTIFACT,AUDIT_ARTIFACT,Y,"UNKNOWN is the R_API macro at line 1 (1/93, 1.08%); method, CFG, and reaching definitions pass U1–U4."
+cpp_spike_009,cpp,INPUT_FRAGMENT,INPUT_FRAGMENT,Y,Lines 1–3 are a constructor initializer without the enclosing class declaration; Joern recovers no real METHOD.
+cpp_spike_011,cpp,INPUT_FRAGMENT,INPUT_FRAGMENT,Y,Lines 1–8 use protocol-tree types/macros from external headers; this isolated excerpt lacks required context.
+c_scale_039,c,INPUT_FRAGMENT,INPUT_FRAGMENT,Y,Line 1 is kernel yam_siocdevprivate with __user/ioctl headers; UNKNOWN swallows the function and no target METHOD is recovered.
+c_scale_045,c,INPUT_FRAGMENT,INPUT_FRAGMENT,Y,"Line 1 is Vim apply_autocmds_group with char_u/UNUSED header context; Joern keeps only <global> wrappers, no target METHOD."
+c_scale_050,c,INPUT_FRAGMENT,INPUT_FRAGMENT,Y,Lines 1–21 use kernel __user and CONFIG_COMPAT context; the parse UNKNOWN swallows the function and no target METHOD is recovered.
+c_scale_071,c,INPUT_FRAGMENT,INPUT_FRAGMENT,Y,Line 1 uses kernel dotraplinkage/notrace; CONFIG_* preprocessor context is absent and no target METHOD is recovered.
+c_scale_100,c,INPUT_FRAGMENT,INPUT_FRAGMENT,Y,Line 1 uses Perl pTHX_ and dVAR macros; preprocessor/header context is absent and no target METHOD is recovered.
+c_scale_086,c,,,Y,"Seeded usable control: line 1 Jsi_ArrayFlatSub; 1 real METHOD, 116 CFG, 337 REACHING_DEF, 0 UNKNOWN/286 nodes."
+c_scale_015,c,,,Y,"Seeded usable control: line 1 perf_event_interrupt; 1 real METHOD, 166 CFG, 416 REACHING_DEF, 0 UNKNOWN/360 nodes."
+c_scale_004,c,,,Y,"Seeded usable control: line 1 decode; 1 real METHOD, 501 CFG, 1,206 REACHING_DEF, 0 UNKNOWN/780 nodes."
+c_scale_099,c,,,Y,"Seeded usable control: lines 1–2 oidc_request_post_preserved_restore; 1 real METHOD, 36 CFG, 160 REACHING_DEF, no UNKNOWN."
+c_scale_036,c,,,Y,"Seeded usable control: line 1 ep4_mul_naf_imp; 1 real METHOD, 166 CFG, 542 REACHING_DEF, 0 UNKNOWN/385 nodes."
