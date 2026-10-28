@@ -114,15 +114,15 @@ artifact is missing or cannot load, the registry falls back to the built-in stub
 | Area | Component | Status | Notes |
 | --- | --- | :---: | --- |
 | **Contract** | `interface.py` data classes, errors, versions | ✅ | Frozen at 1.0 |
-| | `predict(code, language)` | ✅ | Routes Python to the CodeBERT + XGBoost V1; other configured languages use their registry fallback |
+| | `predict(code, language)` | ✅ | Routes Python and C/C++ to the CodeBERT + XGBoost V1; other configured languages use their registry fallback |
 | | `scan_repo(path)` | 🧱 | Validates the path, returns an empty `RepoResult` |
 | | `suggest_fix(finding)` | 🧱 | Returns `no_fix_available`; templates exist but are **not wired in yet** (task W3-P4-02) |
 | **CLI** | `shield scan <file>` | ✅ | Detects language, calls `predict`, prints JSON |
 | | `shield scan-repo`, `shield fix` | ⬜ | Planned (Weeks 3–4) |
 | **Languages** | Registry + `python.yaml`, `cpp.yaml` | ✅ | Python and C/C++ enabled |
 | | `java.yaml` | ⬜ | Present but **disabled** (decision D36) |
-| **Models** | Model registry (`models.yaml`) | ✅ | Python defaults to the tracked `v1`; C/C++ currently use the stub |
-| | V1 training and artifact | ✅ | Window-pooled CodeBERT vectors → class-weighted XGBoost binary and CWE heads; calibration, metrics, saved runs, and MLflow logging |
+| **Models** | Model registry (`models.yaml`) | ✅ | V1 serves Python and C/C++; Java currently uses the stub |
+| | V1 training and artifact | ✅ | Full Python + C/C++ train split (341,640 rows), language-balanced XGBoost heads, per-language calibration, and metrics |
 | | V1 distribution | 🟡 | Installer downloads V1 from the `shield-v1.zip` asset on GitHub Release tag `v1` |
 | | V2 (AST/code-metric features) | ⬜ | Needs tree-sitter utilities (W2-P5-02) |
 | | V3 GNN, V4 fusion | ⬜ | Only a toy GNN on MUTAG (`scripts/tutorials/pyg/`) |
@@ -202,7 +202,7 @@ shield scan path/to/file.py
 shield scan snippet.txt --language python      # override language detection
 ```
 
-For Python, the registry uses V1 after it is installed. It requires the `ml` extra and downloads
+For Python and C/C++, the registry uses V1 after it is installed. It requires the `ml` extra and downloads
 CodeBERT weights on first inference if they are not cached. The JSON shape remains the frozen
 `Result` contract, including the selected model version:
 
@@ -219,7 +219,7 @@ CodeBERT weights on first inference if they are not cached. The JSON shape remai
 ```
 
 The whole path runs: file → language detection → language registry → model registry → V1 → frozen
-`Result`. V1 is Python-only; C and C++ still use the stub until models for those languages are trained.
+`Result`. V1 was trained using both Python and C/C++ examples.
 
 ### Get V1 after cloning or pulling the repository
 
@@ -542,9 +542,9 @@ SHIELD/
 
 | File | Purpose | Input | Output |
 | --- | --- | --- | --- |
-| `models.yaml` | Model catalogue: Python `v1` (`kind: v1`, `path: v1`) is default; the stub handles languages without a trained model. | — | — |
+| `models.yaml` | Model catalogue: Python and C/C++ `v1` (`kind: v1`, `path: v1`) is default; the stub handles languages without a trained model. | — | — |
 | `registry.py` | Reads `models.yaml`, picks default → fallback → built-in stub → error. V1 is loaded lazily, with optional artifact SHA-256 validation. Env overrides: `SHIELD_MODELS_CONFIG`, `SHIELD_MODELS_DIR`. | `get_model(language, version=None)` | object with `.predict(code, language)` and `.version` |
-| `v1/__init__.py` | Loads the trained XGBoost binary/CWE models, confidence calibrator and threshold; embeds incoming Python code with the configured windowed CodeBERT settings. | code + language | frozen `Result` |
+| `v1/__init__.py` | Loads the trained XGBoost binary/CWE models, confidence calibrator and threshold; embeds incoming Python or C/C++ code with the configured windowed CodeBERT settings. | code + language | frozen `Result` |
 | `embeddings/embedder.py` | `CodeBERTEmbedder`: frozen `microsoft/codebert-base`, fp16 on GPU (CPU otherwise), mean-pools token states. The training pipeline adds a persistent content-addressed cache of window-pooled vectors; inference uses the same windowing policy. | list of code strings | one tensor per string (or `None`) |
 | `embeddings/node_embeddings.py` | `CPGNodeEmbedder`: frozen fp16 CodeBERT embeds a node's code text; in-memory cache by string hash; counts requests/hits. | node text | vector |
 | `fix/templates/__init__.py` | `TEMPLATES` map `{sql_parameterize, command_argv, path_confine}` and `get_template(name)`. | template name | function `(code, context="") → TemplateResult` |
@@ -1338,7 +1338,7 @@ fallback: stub-v0    # used when V1 cannot be loaded
 models:
   - version: v1
     kind: v1         # CodeBERT embeddings + XGBoost
-    languages: [python]
+    languages: [python, cpp]
     path: v1         # folder inside model_artifacts/ (or $SHIELD_MODELS_DIR)
   - version: stub-v0
     kind: stub

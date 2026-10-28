@@ -15,7 +15,7 @@ models.yaml entry that uses it:
 
     - version: v1
       kind: v1
-      languages: [python]          # only what V1 was trained on
+      languages: [python, cpp]     # both supported languages use V1
       path: v1                     # a folder inside model_artifacts/
 
 Inference uses the same window splitting and mean pooling as training.
@@ -45,13 +45,25 @@ class V1Model:
         cwe_model: Any | None,
         cwe_classes: list[str],
         embedding_config: dict[str, Any],
+        calibrators_by_language: dict[str, Any] | None = None,
+        thresholds_by_language: dict[str, float] | None = None,
+        family_model: Any | None = None,
+        family_classes: list[str] | None = None,
+        family_constant: int | None = None,
+        leaf_heads: dict[str, dict[str, Any]] | None = None,
     ) -> None:
         self.version = version
         self._calibrator = calibrator
         self._threshold = float(threshold)
+        self._calibrators_by_language = calibrators_by_language or {}
+        self._thresholds_by_language = thresholds_by_language or {}
         self._binary = binary
         self._cwe_model = cwe_model
         self._cwe_classes = list(cwe_classes)
+        self._family_model = family_model
+        self._family_classes = list(family_classes or [])
+        self._family_constant = family_constant
+        self._leaf_heads = leaf_heads or {}
         self._embedding_config = embedding_config
         self._embedder = None
 
@@ -82,11 +94,30 @@ class V1Model:
             )
         features = features.astype("float32", copy=False)
         raw = float(self._binary.predict_proba(features)[0, 1])
-        p_vulnerable = float(self._calibrator.predict([raw])[0])  # calibrated probability
-        vulnerable = p_vulnerable >= self._threshold
+        calibrator = self._calibrators_by_language.get(language, self._calibrator)
+        threshold = self._thresholds_by_language.get(language, self._threshold)
+        p_vulnerable = float(calibrator.predict([raw])[0])  # calibrated probability
+        vulnerable = p_vulnerable >= threshold
 
         cwe = None
-        if vulnerable and self._cwe_model is not None:
+        if vulnerable and (self._family_model is not None or self._family_constant is not None):
+            family_id = self._family_constant
+            if family_id is None:
+                family_id = int(self._family_model.predict(features)[0])
+            if 0 <= family_id < len(self._family_classes):
+                family = self._family_classes[family_id]
+                leaf = self._leaf_heads.get(family, {})
+                if "constant" in leaf and leaf["constant"] is not None:
+                    label = leaf["constant"]
+                elif leaf.get("model") is not None:
+                    label_id = int(leaf["model"].predict(features)[0])
+                    label = leaf["classes"][label_id]
+                else:
+                    label = OTHER_CWE
+            else:
+                label = OTHER_CWE
+            cwe = None if label == OTHER_CWE else label
+        elif vulnerable and self._cwe_model is not None:
             label = self._cwe_classes[int(self._cwe_model.predict(features)[0])]
             cwe = None if label == OTHER_CWE else label
 
@@ -149,6 +180,19 @@ def load(entry: ModelEntry, artifact_dir: Path) -> V1Model:
     if missing:
         raise ModelLoadError(f"model {entry.version}: {prep_file.name} lacks: {', '.join(missing)}")
 
+    leaf_heads = {}
+    for family, descriptor in prep.get("leaf_heads", {}).items():
+        leaf_model = (
+            _read_model(folder, Path(descriptor["file"]).stem, required=False)
+            if descriptor.get("file")
+            else None
+        )
+        leaf_heads[family] = {
+            "classes": descriptor.get("classes", []),
+            "constant": descriptor.get("constant"),
+            "model": leaf_model,
+        }
+    family_model = _read_model(folder, "family_model", required=False)
     return V1Model(
         version=entry.version,
         calibrator=prep["calibrator"],
@@ -159,4 +203,10 @@ def load(entry: ModelEntry, artifact_dir: Path) -> V1Model:
         embedding_config=json.loads(config_file.read_text(encoding="utf-8")).get(
             "embedding", {"model_name": "microsoft/codebert-base", "max_tokens": 512, "overlap": 64}
         ),
+        calibrators_by_language=prep.get("calibrators_by_language"),
+        thresholds_by_language=prep.get("thresholds_by_language"),
+        family_model=family_model,
+        family_classes=prep.get("family_classes"),
+        family_constant=prep.get("family_constant"),
+        leaf_heads=leaf_heads,
     )

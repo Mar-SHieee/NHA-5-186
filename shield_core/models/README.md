@@ -1,6 +1,6 @@
 # `shield_core/models/`
 
-The model registry selects Python V1 from `models.yaml`. The model weights are distributed as a
+The model registry selects V1 for Python and C/C++ from `models.yaml`. The model weights are distributed as a
 GitHub Release asset because the files exceed the repository's added-file size limit. The installer
 fetches and verifies the asset into `model_artifacts/v1/`.
 
