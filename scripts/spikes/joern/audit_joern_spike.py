@@ -4,11 +4,29 @@ import pandas as pd
 
 from shield_core.paths import DOCS_GRAPHS_DIR, REPO_ROOT
 
+try:
+    from scripts.spikes.joern.triage_core import preserve_block
+except ModuleNotFoundError:
+    from triage_core import preserve_block
+
 ROOT = REPO_ROOT
 TEST_DIR = ROOT / "data" / "interim" / "joern_spike_full"
 RESULTS_FILE = ROOT / "data" / "interim" / "joern_spike_results.csv"
 AUDIT_FILE = ROOT / "data" / "interim" / "joern_spike_audit.csv"
 REPORT_FILE = DOCS_GRAPHS_DIR / "joern_spike.md"
+
+
+def _write_report_preserving_triage(report_file, generated_report):
+    previous_report = report_file.read_text(encoding="utf-8") if report_file.is_file() else ""
+    report_file.write_text(
+        preserve_block(
+            previous_report,
+            generated_report,
+            "<!-- TRIAGE:BEGIN -->",
+            "<!-- TRIAGE:END -->",
+        ),
+        encoding="utf-8",
+    )
 
 
 def inspect_dot_file(path):
@@ -221,10 +239,8 @@ def main():
     )
 
     REPORT_FILE.parent.mkdir(parents=True, exist_ok=True)
-    REPORT_FILE.write_text(
-        "\n".join(report_lines) + "\n",
-        encoding="utf-8",
-    )
+    generated_report = "\n".join(report_lines) + "\n"
+    _write_report_preserving_triage(REPORT_FILE, generated_report)
 
     print(f"Audit saved: {AUDIT_FILE}")
     print(f"Report saved: {REPORT_FILE}")

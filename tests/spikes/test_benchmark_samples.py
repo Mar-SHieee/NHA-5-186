@@ -1,5 +1,6 @@
 """Tests for scripts/spikes/joern/benchmark_samples.py (W2-P2-05). Synthetic data only."""
 
+import ast
 import csv
 import re
 
@@ -81,6 +82,66 @@ def test_scale_warns_and_returns_fewer_when_not_enough_rows(interim):
     with pytest.warns(UserWarning, match="only 30"):
         scale = bs.draw_scale_samples(50, seed=43, exclude_sha=frozenset(), interim_dir=interim)
     assert len(scale) == 90  # 30 per group
+
+
+def test_c_scale_draw_uses_language_labeled_c_rows_and_excludes_hashes(tmp_path):
+    c_rows = [
+        "int c_first(void) { return 1; }\n",
+        "int c_second(void) { return 2; }\n",
+        "int c_third(void) { return 3; }\n",
+    ]
+    pd.DataFrame(
+        {
+            "code": [*c_rows, "int cpp_only() { return 4; }\n", c_rows[1]],
+            "language": ["c", "c", "c", "cpp", "c"],
+        }
+    ).to_parquet(tmp_path / "cvefixes_cpp.parquet")
+    excluded = Sample("c_spike_001", "c", ".c", c_rows[0], "spike", "fixture", 0)
+
+    samples = bs.draw_c_scale_samples(
+        2, seed=43, exclude_sha={excluded.sha256}, interim_dir=tmp_path
+    )
+
+    assert len(samples) == 2
+    assert all(sample.group == "c" and sample.extension == ".c" for sample in samples)
+    assert all(sample.source == "cvefixes_cpp" and sample.set_name == "scale" for sample in samples)
+    assert all(sample.sha256 != excluded.sha256 for sample in samples)
+    assert len({sample.sha256 for sample in samples}) == 2
+    assert all("cpp_only" not in sample.code for sample in samples)
+
+
+def test_context_wrap_only_wraps_indented_python_method_excerpts():
+    indented = Sample(
+        "python_scale_001",
+        "python",
+        ".py",
+        "    def get(self, value):\n        return value\n",
+        "scale",
+        "cvefixes_python",
+        1,
+    )
+    top_level = Sample(
+        "python_scale_002",
+        "python",
+        ".py",
+        "def get(value):\n    return value\n",
+        "scale",
+        "cvefixes_python",
+        2,
+    )
+    c_sample = Sample("c_scale_001", "c", ".c", "int f(void) { return 1; }", "scale", "x", 0)
+
+    wrapped, unchanged_top, unchanged_c = bs.wrap_indented_python_method_snippets(
+        [indented, top_level, c_sample]
+    )
+
+    assert wrapped.code.startswith("class __ShieldSnippet__:\n    def get")
+    tree = ast.parse(wrapped.code)
+    assert isinstance(tree.body[0], ast.ClassDef)
+    assert isinstance(tree.body[0].body[0], ast.FunctionDef)
+    assert "synthetic-class-wrapper" in wrapped.source
+    assert unchanged_top == top_level
+    assert unchanged_c == c_sample
 
 
 def test_empty_and_non_string_code_is_dropped(tmp_path):

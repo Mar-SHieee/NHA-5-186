@@ -60,39 +60,16 @@ CALL resolution and source-to-graph semantic correctness were not verified.
 - Audit CSV: `data/interim/joern_spike_audit.csv`
 - Original results CSV: `data/interim/joern_spike_results.csv`
 
-## Performance Evaluation
+<!-- TRIAGE:BEGIN -->
+## Graph-quality triage (W2-P2-04)
 
-### Overall Results
+Raw-path verdicts under frozen U1–U4 thresholds:
 
-| Metric | Result |
-|---|---:|
-| Samples processed | 60 |
-| Sum of per-sample processing times | 350.90 seconds |
-| Average processing time per sample | 5.85 seconds |
-| Median processing time per sample | 5.95 seconds |
-| Fastest sample | 4.23 seconds |
-| Slowest sample | 6.06 seconds |
-| Average per-sample peak container memory | 214.51 MiB |
-| Maximum per-sample peak container memory | 243.50 MiB |
+- **Python: NO-GO** — 45/120 usable (95% Wilson 0.2935–0.4642).
+- **C: GO** — 95/100 verified C samples usable (95% Wilson 0.8882–0.9785). The legacy BigVul C-labelled samples were metadata `cpp` and are excluded.
+- **C++: GO** — 17/20 usable (95% Wilson 0.6396–0.9476).
 
-### Results by Language
+Python is **NO-GO on the current raw production path**. The triage-only synthetic-class context experiment made 120/120 Python samples usable. Recommendation: apply the wrapper consistently to every indented Python method excerpt in production, with source-line offset correction. The experiment adds a parser line and does not change the raw-path verdict until that production path is implemented and verified. Main causes were missing input context in Python excerpts, input fragments among verified C samples, and input fragments or expected no-flow cases in C++.
 
-| Language | Samples | Total Processing Time | Average Time per Sample | Average Peak Memory |
-|---|---:|---:|---:|---:|
-| C | 20 | 117.05 s | 5.85 s | 207.98 MiB |
-| C++ | 20 | 119.04 s | 5.95 s | 216.76 MiB |
-| Python | 20 | 114.81 s | 5.74 s | 218.78 MiB |
-
-### Interpretation
-
-- Per-sample processing times were similar across the three languages.
-- The average recorded processing time was approximately 5.85 seconds per sample.
-- The sum of per-sample processing times is not necessarily the wall-clock duration of the entire experiment.
-- Memory figures represent recorded per-sample peak container memory, not total system memory consumption.
-- These measurements apply to the tested 60-sample set and should not be treated as a guaranteed performance estimate for larger datasets.
-
-### Export Success vs. Graph Content
-
-The original results CSV records successful parsing, CFG export, DDG export, and pipeline execution for all 60 samples. However, the separate artifact audit found non-empty DDG graphs in only 47 samples.
-
-This distinction indicates that a successful export operation does not necessarily guarantee a non-empty graph. The empty DDG outputs and UNKNOWN CFG nodes require further investigation before graph extraction can be considered fully validated.
+First-build stub rule: **Rule A (provisional)**; revisit in the Week-3 ablation (decision D41). Full evidence: [joern_triage.md](joern_triage.md), with the reviewed evidence in [joern_triage_review.csv](joern_triage_review.csv).
+<!-- TRIAGE:END -->

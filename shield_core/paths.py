@@ -23,6 +23,7 @@ GRAPH_CACHE_DIR = CACHE_DIR / "graphs"  # Joern graphs keyed by code hash + vers
 MODEL_ARTIFACTS_DIR = REPO_ROOT / "model_artifacts"  # files the model registry loads
 TRAIN_RUNS_DIR = MODEL_ARTIFACTS_DIR / "train_runs"  # output of scripts/training/train_v1.py
 BENCHMARK_DIR = INTERIM_DIR / "joern_benchmark"  # Joern extraction benchmark results
+JOERN_TRIAGE_DIR = INTERIM_DIR / "joern_triage"  # Raw graphs and reports for W2-P2-04
 
 # --- tracked: documentation, grouped by topic ----------------------------------------
 DOCS_DIR = REPO_ROOT / "docs"

@@ -1493,7 +1493,7 @@ Honest list, so nobody is surprised. Each item names the plan task that closes i
 | 3 | `scripts/data_audit/split_qa.py` is an **empty file**; the split QA tool and its CI test do not exist yet. | `scripts/` | W2-P5-04 |
 | 4 | The CodeBERT pretrained weights need to be cached or downloaded on first inference; the XGBoost model files are distributed in the V1 release bundle. | `model_artifacts/v1/`, Hugging Face cache | provide pretrained weights for offline installs |
 | 5 | `shield_core/eval/metrics.py` gives weighted aggregates only (no per-CWE / per-language / multi-label). | `shield_core/eval/` | W2-P3-03 |
-| 6 | No batch graph runner yet (W2-P1-02); speed per sample is measured (`docs/graphs/extraction_report.md`), but two-file fidelity checks did not validate batching for Python, C or C++; the converter to PyG is still a script and graph schema is `0.1-draft`. | `extraction/`, `scripts/graphs/graphml_to_pyg.py`, `scripts/spikes/joern/` | W2-P1-02, W2-P2-01, W2-P2-05 |
+| 6 | No batch graph runner yet (W2-P1-02); speed per sample is measured (`docs/graphs/extraction_report.md`), but two-file fidelity checks did not validate batching for Python, C or C++; the converter to PyG is still a script and graph schema is `0.1-draft`. W2-P2-04 records raw Python NO-GO, verified C and C++ GO, and recommends consistently wrapping indented Python method excerpts with source-line offset correction; production mapping remains to be validated. | `extraction/`, `scripts/graphs/graphml_to_pyg.py`, `scripts/spikes/joern/`, `docs/graphs/joern_triage.md` | W2-P1-02, W2-P2-01, W2-P2-04, W2-P2-05 |
 | 7 | **364 CVE ids cross splits**; CVE-level grouping is not enforced. | manifest `diagnostics` | W2-P1-03 |
 | 8 | Python is only ≈ 1 % of rows; per-CWE Python claims are fragile. Class imbalance ≈ 6 % positives. | data | report group counts; D39 negatives |
 | 9 | No license/source note per dataset. | `docs/` | W2-P1-04 |
@@ -1507,7 +1507,8 @@ Honest list, so nobody is surprised. Each item names the plan task that closes i
 - [x] `shield scan file.py` returns a V1 prediction with confidence; CWE is returned when the binary head predicts vulnerable
 - [ ] Per-CWE and per-language metrics on the frozen leakage-safe split, with split QA green and group counts
 - [ ] Graph cache built for the training subset of Python and C/C++
-- [ ] Dataset license note, label-noise hand-check, Joern graph-quality triage recorded
+- [ ] Dataset license note, label-noise hand-check
+- [x] Joern graph-quality triage recorded (`docs/graphs/joern_triage.md`, D41)
 - [ ] CI confirmed green on `main` on GitHub
 
 ---

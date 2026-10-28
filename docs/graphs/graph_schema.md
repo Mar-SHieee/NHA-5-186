@@ -192,6 +192,7 @@ Joern 4.0.647, from `joern-parse --list-languages`:
 - Stub methods: Rule A (current) keeps wrapper methods and external-function stubs. Rule B
   drops every METHOD without a line number (removes the `strcpy` stub and its CALL edge, and
   matches Python's behaviour for undefined functions). Decide with a training comparison.
+  W2-P2-04 selects Rule A provisionally from edge-loss/component evidence; see decision D41 and revisit in the Week-3 ablation.
 - Hub edges: edges into METHOD_RETURN and out of METHOD may dilute signal. Test with and
   without them.
 - A REACHING_DEF edge from METHOD into `name` (Python, line 5) is unexplained (guess: a

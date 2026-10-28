@@ -105,6 +105,58 @@ def test_scale_sample_selection_excludes_spike_hashes_and_filters_c(monkeypatch)
     assert observed == {"n": 100, "seed": 43, "exclude_sha": {original.sha256}}
 
 
+def test_c_scale_selection_uses_language_filtered_sampler(monkeypatch):
+    original = Sample("c_spike_001", "c", ".c", "int f() { return 1; }", "spike", "bigvul", 0)
+    c_sample = Sample("c_scale_001", "c", ".c", "int g() { return 2; }", "scale", "cvefixes_cpp", 7)
+    observed = {}
+
+    monkeypatch.setattr(triage_cli, "load_spike_samples", lambda: [original])
+
+    def fake_draw(n, seed, exclude_sha):
+        observed.update(n=n, seed=seed, exclude_sha=exclude_sha)
+        return [c_sample]
+
+    monkeypatch.setattr(triage_cli, "draw_c_scale_samples", fake_draw)
+    assert triage_cli._samples_for_set("c-scale", "c", 100, 43) == [c_sample]
+    assert observed == {"n": 100, "seed": 43, "exclude_sha": {original.sha256}}
+
+
+def test_python_context_wrap_only_repairs_graphs_without_a_real_method():
+    sample = Sample(
+        "python_scale_001",
+        "python",
+        ".py",
+        "    def f(self, x):\n        return x\n",
+        "scale",
+        "cvefixes_python",
+        1,
+    )
+    wrapper_only_graph = CodeGraph(
+        "python",
+        "fixture",
+        "1",
+        "1",
+        [GraphNode(1, "METHOD", "module", "<module>", 1)],
+        [],
+    )
+    real_method_graph = CodeGraph(
+        "python",
+        "fixture",
+        "1",
+        "1",
+        [GraphNode(1, "METHOD", "def f(self, x): return x", "f", 1)],
+        [],
+    )
+
+    repaired = triage_cli._wrap_python_sample_if_method_missing(sample, wrapper_only_graph)
+    unchanged = triage_cli._wrap_python_sample_if_method_missing(sample, real_method_graph)
+
+    assert repaired.code.startswith("class __ShieldSnippet__:\n")
+    assert "synthetic-class-wrapper" in repaired.source
+    assert unchanged is sample
+    assert triage_cli._output_dir("scale", "python", True).name == "python_scale_wrapped"
+
+
 def test_scale_analysis_does_not_call_missing_ddg_view_dot_view_only(tmp_path, monkeypatch):
     sample = Sample(
         "c_scale_001",
@@ -130,6 +182,9 @@ def test_scale_analysis_does_not_call_missing_ddg_view_dot_view_only(tmp_path, m
 
     monkeypatch.setattr(triage_cli, "_samples_for_set", lambda *args, **kwargs: [sample])
     monkeypatch.setattr(triage_cli, "GraphCache", lambda root: FakeCache())
+    stale_cards = tmp_path / "c_scale" / "cards"
+    stale_cards.mkdir(parents=True)
+    (stale_cards / "stale.md").write_text("old card", encoding="utf-8")
     summary = triage_cli.analyze_samples(
         spike_root=tmp_path / "unused",
         cache_root=tmp_path / "cache",
@@ -141,6 +196,8 @@ def test_scale_analysis_does_not_call_missing_ddg_view_dot_view_only(tmp_path, m
     )
     with (tmp_path / "c_scale" / "triage.csv").open(encoding="utf-8", newline="") as f:
         row = next(csv.DictReader(f))
-    assert row["auto_cause"] == "OTHER"
+    assert row["auto_cause"] == ""
     assert row["usable"] == "True"
+    assert not (tmp_path / "c_scale" / "cards" / "c_scale_001.md").exists()
+    assert not (tmp_path / "c_scale" / "cards" / "stale.md").exists()
     assert summary["languages"]["c"]["usable"] == 1
