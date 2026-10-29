@@ -18,6 +18,18 @@ from shield_core.eval.metrics import (
 )
 
 FAMILY_MAP = Path("scripts/training/cwe_family_map.json")
+SPLIT_QA_CWE = Path("docs/datasets/audits/split_qa_cwe.csv")
+
+
+def split_qa_cells(split_qa, cwe):
+    """Rows in train / val / test and commit groups for one CWE, from split QA."""
+    info = split_qa.get(cwe)
+    if info is None:
+        return " - | - | - | - |"
+    return (
+        f" {int(info['rows_train'])} | {int(info['rows_val'])} | {int(info['rows_test'])}"
+        f" | {int(info['commit_groups'])} |"
+    )
 
 
 def main():
@@ -47,6 +59,11 @@ def main():
 
     results = per_cwe_metrics_by_language(y_true, y_pred, languages)
 
+    # Rows per split and commit groups per CWE, from the split QA tool (W2-P5-04)
+    split_qa = {}
+    if not by_family and SPLIT_QA_CWE.exists():
+        split_qa = pd.read_csv(SPLIT_QA_CWE).set_index("cwe").to_dict("index")
+
     lines = [
         f"# V1 per-{'family' if by_family else 'CWE'} results (test split)",
         "",
@@ -55,8 +72,15 @@ def main():
         "`reliable = no` means fewer than 3 commits for that CWE, so do not quote its numbers.",
         "A CWE is listed if it is the true CWE of a test row, or if the model predicted it.",
         "`support = 0` means the model predicted that CWE, but no test row has it.",
-        "",
     ]
+    if split_qa:
+        lines += [
+            "`train / val / test rows` and `groups` come from split QA (`split_qa_cwe.csv`):",
+            "all languages, and every row tagged with the CWE (label 0 too), so they are",
+            "bigger than `support`. `-` means the CWE is not in split QA (for example Other).",
+        ]
+    lines.append("")
+
     for language, rows in results.items():
         lang_rows = df["language"] == language
         # Same rule as the metrics, so support and commits count the same rows
@@ -67,17 +91,24 @@ def main():
         ]
         commits = commits_per_cwe(true_cwe, df.loc[lang_rows, "commit"].tolist())
 
-        lines += [f"## {language}", ""]
         name = "family" if by_family else "CWE"
-        lines += [f"| {name} | support | commits | reliable | precision | recall | f1 |"]
-        lines += ["| --- | --- | --- | --- | --- | --- | --- |"]
+        header = f"| {name} | support | commits | reliable | precision | recall | f1 |"
+        divider = "| --- | --- | --- | --- | --- | --- | --- |"
+        if split_qa:
+            header += " train rows | val rows | test rows | groups |"
+            divider += " --- | --- | --- | --- |"
+        lines += [f"## {language}", "", header, divider]
+
         for row in sorted(rows, key=lambda r: r["support"], reverse=True):
             info = commits.get(row["cwe"], {"commits": 0, "reliable": False})
-            lines.append(
+            line = (
                 f"| {row['cwe']} | {row['support']} | {info['commits']} "
                 f"| {'yes' if info['reliable'] else 'no'} "
                 f"| {row['precision']:.3f} | {row['recall']:.3f} | {row['f1']:.3f} |"
             )
+            if split_qa:
+                line += split_qa_cells(split_qa, row["cwe"])
+            lines.append(line)
         lines.append("")
 
     out_path.parent.mkdir(parents=True, exist_ok=True)
