@@ -83,10 +83,14 @@ def load_split(
         df = df[df.language == language].copy()
     else:
         df = df.copy()
+    df["cwe_all"] = df.cwe.map(
+        lambda v: [v] if isinstance(v, str) else list(v) if v is not None else []
+    )
     df["cwe"] = df.cwe.map(first_cwe)
     if use_fixed and "code" in df and "fixed_code" in df:
         fixed = df[(df.label == 1) & df.fixed_code.notna() & (df.fixed_code != df.code)].copy()
         fixed["code"], fixed["label"], fixed["cwe"] = fixed.fixed_code, 0, None
+        fixed["cwe_all"] = [[] for _ in range(len(fixed))]
         df = pd.concat([df, fixed], ignore_index=True)
     if "code" in df:
         df["code"] = df.code.fillna("").astype(str)
@@ -134,6 +138,9 @@ def load_precomputed_split(
         frame, row_indices = frame.loc[keep_code], row_indices[keep_code]
         keep_unique = ~frame.code.duplicated().to_numpy()
         frame, row_indices = frame.loc[keep_unique], row_indices[keep_unique]
+    frame["cwe_all"] = frame.cwe.map(
+        lambda v: [v] if isinstance(v, str) else list(v) if v is not None else []
+    )
     frame["cwe"] = frame.cwe.map(first_cwe)
     frame["label"] = frame.label.astype(int)
     if frame.label.nunique() < 2:
@@ -598,7 +605,7 @@ def run(config: dict[str, Any], *, publish: bool = False) -> Path:
     def predict_head(head, features):
         if "constant" in head:
             return np.repeat(head["constant"], len(features))
-        ids = head["model"].predict(features).astype(int)
+        ids = head["model"].predict_proba(features).argmax(axis=1)
         return np.asarray(head["classes"], dtype=object)[ids]
 
     def predict_hierarchical(features):
@@ -721,6 +728,21 @@ def run(config: dict[str, Any], *, publish: bool = False) -> Path:
     (run_dir / "metrics.json").write_text(
         json.dumps(scores, indent=2, allow_nan=False), encoding="utf-8"
     )
+    # Row-level test predictions for the per-CWE table (W2-P3-03)
+    test_frame = data["test"]
+    pred_label = (test_language_prob >= test_thresholds).astype(int)
+    predictions = pd.DataFrame(
+        {
+            "language": test_frame.language.to_numpy(),
+            "commit": test_frame["commit"].to_numpy() if "commit" in test_frame else None,
+            "label": y["test"],
+            "cwe_all": test_frame.cwe_all.to_numpy(),
+            "pred_label": pred_label,
+            "pred_cwe": predict_hierarchical(matrices["test"]),
+        }
+    )
+    predictions.to_parquet(run_dir / "predictions_test.parquet", index=False)
+
     bins = np.clip((test_prob * 10).astype(int), 0, 9)
     (
         pd.DataFrame({"bin": bins, "pred": test_prob, "true": y["test"]})
