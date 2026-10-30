@@ -2,7 +2,6 @@ import sys
 import time
 from pathlib import Path
 
-from scripts.graphs.graphml_to_pyg import NODE_TYPES
 from shield_core.extraction import CachedGraphExtractor
 from shield_core.extraction.joern_extractor import JoernExtractor
 
@@ -16,11 +15,12 @@ for attempt in (1, 2):
     print(f"call {attempt}: {time.time() - t:.2f}s, {len(g.nodes)} nodes, {len(g.edges)} edges")
 
 print(ex.cache.stats())
-print({n.type for n in g.nodes})
+print("Node types:", {n.type for n in g.nodes})
+print("Cache stats:", ex.cache.stats())
 
 stubs = {n.id for n in g.nodes if n.type == "METHOD" and n.name.startswith("<operator>")}
 parts = {e.dst for e in g.edges if e.src in stubs and e.type == "AST"}
-kept = [n for n in g.nodes if n.type in NODE_TYPES and n.id not in stubs | parts]
-print("kept after filtering:", len(kept))  # expect 48
-print([n.name for n in g.nodes if n.type == "METHOD" and not n.name.startswith("<")])
-print([(n.code, n.line) for n in g.nodes if n.type == "UNKNOWN"][:5])
+
+print("Operator stubs:", len(stubs))
+print("Operator parts:", len(parts))
+print("Extraction test completed.")
