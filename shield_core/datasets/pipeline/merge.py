@@ -52,8 +52,29 @@ def load_dataset(path: Path) -> pd.DataFrame:
             f"{path.name}: missing columns {missing} (schema {schema.SCHEMA_VERSION}); "
             "regenerate it with the current loader"
         )
+
     df = schema.from_parquet(path)  # restores list columns, enforces dtypes
+
+    # Repair CVE values that were incorrectly converted into character lists.
+    if "cve" in df.columns:
+
+        def normalize_cve(value):
+            if isinstance(value, str):
+                return [value]
+
+            if isinstance(value, list):
+                if value and all(isinstance(item, str) and len(item) == 1 for item in value):
+                    joined = "".join(value)
+                    if joined.startswith("CVE-"):
+                        return [joined]
+                return value
+
+            return value
+
+        df["cve"] = df["cve"].apply(normalize_cve)
+
     problems = schema.validate(df)
+
     if problems:
         shown = "; ".join(problems[:5])
         raise DatasetSchemaError(f"{path.name}: {len(problems)} schema problems, e.g. {shown}")
@@ -100,15 +121,27 @@ def merge_datasets(
 
 
 def count_cross_source_duplicates(df: pd.DataFrame) -> int:
-    """Number of whitespace-insensitive code strings that appear in more than one source.
+    """Count normalized code strings appearing in more than one source.
 
-    Dedupe should already have removed these; a non-zero value means it was not applied
-    across datasets. Reported only, never dropped here.
+    Duplicates are reported, never dropped.
+    Processes codes individually to reduce peak memory usage.
     """
-    key = pd.util.hash_pandas_object(
-        df["code"].astype(object).str.replace(r"\s+", "", regex=True), index=False
-    )
-    return int((pd.DataFrame({"k": key, "s": df["source"]}).groupby("k")["s"].nunique() > 1).sum())
+    import hashlib
+    import re
+
+    seen_sources: dict[str, set[str]] = {}
+
+    for code, source in zip(df["code"], df["source"], strict=False):
+        if not isinstance(code, str):
+            continue
+
+        normalized = re.sub(r"\s+", "", code)
+        code_hash = hashlib.sha256(normalized.encode("utf-8")).hexdigest()
+
+        sources = seen_sources.setdefault(code_hash, set())
+        sources.add(str(source))
+
+    return sum(len(sources) > 1 for sources in seen_sources.values())
 
 
 def merge_deduped_datasets(
