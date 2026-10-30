@@ -3,7 +3,7 @@ fallback: stub-v0
 models:
   - version: v1
     kind: v1
-    languages: [python]
+    languages: [python, cpp]
     path: v1
   - version: stub-v0
     kind: stub

@@ -74,13 +74,13 @@ def put_artifact(tmp_path, name="v2/model.bin", data=b"weights"):
 # ------------------------------------------------------------------ choosing a model
 
 
-def test_shipped_config_uses_v1_for_python_with_stub_fallback():
+def test_shipped_config_uses_v1_for_supported_languages_with_stub_fallback():
     config = load_config(DEFAULT_CONFIG)
     assert config.default == "v1"
     assert config.models["v1"].kind == "v1"
-    assert config.models["v1"].languages == ("python",)
+    assert config.models["v1"].languages == ("python", "cpp")
     assert config.fallback == "stub-v0"
-    assert ModelRegistry(DEFAULT_CONFIG).get_model("cpp").version == "stub"
+    assert ModelRegistry(DEFAULT_CONFIG).get_model("java").version == "stub"
 
 
 def test_default_model_is_used_when_it_loads(tmp_path):

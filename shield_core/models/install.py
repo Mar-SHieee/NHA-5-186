@@ -17,7 +17,7 @@ from shield_core.models.registry import ARTIFACT_ENV, DEFAULT_ARTIFACT_DIR
 
 DEFAULT_REPOSITORY = "nhahub/NHA-5-186"
 ASSET_NAME = "shield-v1.zip"
-REQUIRED_FILES = {"binary_model.json", "cwe_model.json", "preprocessing.joblib", "config.json"}
+REQUIRED_FILES = {"binary_model.json", "preprocessing.joblib", "config.json"}
 MAX_BUNDLE_SIZE = 100 * 1024 * 1024
 
 
@@ -77,18 +77,29 @@ def _verify_and_extract(archive: Path, staging: Path) -> None:
             expected: dict[str, str] = {}
             for line in bundle.read("SHA256SUMS").decode("ascii").splitlines():
                 digest, _, filename = line.partition("  ")
-                if len(digest) != 64 or not filename or Path(filename).name != filename:
+                relative = PurePosixPath(filename)
+                if (
+                    len(digest) != 64
+                    or not filename
+                    or relative.is_absolute()
+                    or ".." in relative.parts
+                ):
                     raise InstallError("Model bundle has an invalid SHA256SUMS entry")
                 expected[filename] = digest
-            if not REQUIRED_FILES.issubset(expected):
+            has_cwe_head = any(
+                name in expected for name in ("cwe_model.json", "family_model.json")
+            ) or any(PurePosixPath(name).name.startswith("leaf_") for name in expected)
+            if not REQUIRED_FILES.issubset(expected) or not has_cwe_head:
                 raise InstallError("Checksum list is missing required V1 files")
-            if not set(expected).issubset({Path(name).name for name in members}):
+            if not set(expected).issubset(set(members)):
                 raise InstallError("Model bundle is missing files listed in SHA256SUMS")
             for filename, digest in expected.items():
                 content = bundle.read(filename)
                 if hashlib.sha256(content).hexdigest() != digest:
                     raise InstallError(f"Checksum mismatch for {filename}")
-                (staging / filename).write_bytes(content)
+                destination = staging.joinpath(*PurePosixPath(filename).parts)
+                destination.parent.mkdir(parents=True, exist_ok=True)
+                destination.write_bytes(content)
     except (zipfile.BadZipFile, UnicodeDecodeError, KeyError, OSError) as exc:
         if isinstance(exc, InstallError):
             raise
