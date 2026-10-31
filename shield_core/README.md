@@ -12,6 +12,7 @@
 | `embeddings/` | CodeBERT function and graph-node embeddings. V1 uses sliding windows and mean pooling. |
 | `eval/` | Evaluation metrics. |
 | `extraction/` | Joern code-property-graph extraction and disk cache. |
+| `graph_dataset/` | Deterministic cached CodeGraph filtering, PyG conversion, split building and size reports. |
 | `fix/`, `verify/` | Template fixes and verification checks. |
 | `languages/` | Language configuration and registry. |
 | `models/` | Model registry, CodeBERT + XGBoost V1 loader, and GitHub Release installer. |

@@ -136,7 +136,8 @@ artifact is missing or cannot load, the registry falls back to the built-in stub
 | **Graphs** | `GraphExtractor` + Joern + cache | ✅ | Library only |
 | | Batch extraction over the training subset | ⬜ | W2-P1-02; speed measured (W2-P2-05) |
 | | Extraction benchmark (`scripts/spikes/joern/benchmark_extraction.py`) | ✅ | Per-sample vs batched Joern, 1/2/4 workers, memory; results in `docs/graphs/extraction_report.md` |
-| | CPG → PyG converter | 🟡 | `scripts/graphs/graphml_to_pyg.py` (not yet in `shield_core/`) |
+| | CPG → PyG converter | ✅ | `shield_core/graph_dataset/` · converter 1.0 · five Python/C/C++ fixtures and a 300-row Python smoke build |
+| | Processed PyG dataset | 🟡 | 300-row Python smoke build exists; full P1 manifests/cache are still needed for corpus-wide use |
 | **Taint** | Query generator from YAML | ✅ | `shield_core/taint/joern_queries.py` |
 | | Taint spike driver | ✅ | `scripts/spikes/taint/run_taint_spike.py` |
 | | Taint as model features | ⬜ | Week 3 |
@@ -374,6 +375,7 @@ SHIELD/
 ├── 🤖 .github/                   ← workflows/ci.yml (ruff, format check, pytest) + pull_request_template.md
 ├── 🐳 docker/joern/              ← reproducible Joern runtime (Dockerfile, pinned requirements, smoke/ test)
 ├── 📦 requirements/              ← pinned GPU torch wheel (CUDA 12.6)
+├── 📂 data/                      ← generated; processed PyG splits live under processed/pyg/<version>/<schema>/<language>/<fingerprint>/
 │
 ├── 🧠 shield_core/               ← THE CORE LIBRARY: everything importable lives here
 │   ├── interface.py              ← frozen public contract: predict · scan_repo · suggest_fix
@@ -391,6 +393,7 @@ SHIELD/
 │   │   └── pipeline/             ← dedupe → project_normalization → merge → splits
 │   │
 │   ├── extraction/               ← code → graph: graph_extractor.py (interface) · joern_extractor.py · cache.py
+│   ├── graph_dataset/            ← cached CodeGraph → filtered PyG tensors, split builder, dataset and statistics
 │   ├── taint/                    ← joern_queries.py: YAML sources/sinks/sanitizers → Joern script → parsed flows
 │   ├── embeddings/               ← CodeBERT: embedder.py (functions) · node_embeddings.py (graph nodes)
 │   ├── models/                   ← registry.py + models.yaml: which model answers, Python V1 default with stub fallback
@@ -401,15 +404,15 @@ SHIELD/
 ├── 🛠️ scripts/                   ← runnable entry points; may import shield_core, never the reverse
 │   ├── data_audit/               ← acceptance_check · explore_* reports · absent-commit check · split_qa (empty)
 │   ├── embeddings/               ← token lengths, long-function windows, bulk embedding jobs
-│   ├── graphs/                   ← graphml_to_pyg · try_extractor · filter_counts · inspect_export/ (GraphML viewers)
+│   ├── graphs/                   ← build_pyg_dataset · export_to_fixture · graphml_to_pyg wrapper · try_extractor · filter_counts
 │   ├── spikes/                   ← joern/ (Joern go/no-go + extraction benchmark) · taint/ (taint spike driver)
 │   ├── training/                 ← train_v1.py
 │   └── tutorials/                ← demo_tracking.py · pyg/ (PyG lessons + toy GNN)
 │
 ├── 🧪 tests/                     ← mirrors shield_core: tests/<folder>/ tests shield_core/<folder>/
-│   ├── interface/ · languages/ · models/ · embeddings/ · datasets/ · extraction/ · taint/ · fix/ · verify/ · eval/
+│   ├── interface/ · languages/ · models/ · embeddings/ · datasets/ · extraction/ · graph_dataset/ · taint/ · fix/ · verify/ · eval/
 │   ├── test_layout.py · test_tracking.py · test_smoke.py   ← cross-cutting
-│   └── fixtures/                 ← joern/ (Python + C++ files) · taint/{python,c}/ (fixtures with an EXPECT line)
+│   └── fixtures/                 ← graphs/ (frozen CodeGraphs) · joern/ · taint/{python,c}/
 │
 ├── 📚 docs/                      ← written evidence, grouped by topic (see section 19)
 │   ├── api/ · datasets/{audits,exploration,leakage,project_names}/ · graphs/ · taint/ · fixes/ · modeling/ · project/
@@ -418,6 +421,7 @@ SHIELD/
 ├── 💾 data/
 │   ├── raw/                      ← downloaded datasets (CVEfixes, MegaVul, Big-Vul, Zenodo)
 │   ├── interim/                  ← unified-schema parquet, deduped files, splits/
+│   ├── processed/pyg/             ← converter/schema/language/config fingerprint → PyG split files
 │   └── cache/                    ← graph cache (data/cache/graphs); `CodeBERTEmbedder` creates the folder but no longer writes to it
 ├── 🗃️ model_artifacts/           ← model files the registry loads (override: SHIELD_MODELS_DIR)
 │   └── train_runs/               ← output of scripts/training/train_v1.py
@@ -451,6 +455,7 @@ SHIELD/
 | `shield_core/paths.py` | The one place that knows where the repo root, `data/` and `docs/` folders are. | Create folders or read files. |
 | `shield_core/datasets/` | Turning five raw datasets into **one** clean table (`loaders/`), then into **leakage-safe** train/val/test/holdout files (`pipeline/`). | Train anything. |
 | `shield_core/extraction/` | Turning code into a graph. Caching results. | Decide whether code is vulnerable. |
+| `shield_core/graph_dataset/` | Filtering cached CodeGraphs, making PyG tensors and building versioned split datasets. | Run Joern, train a GNN or compute node embeddings. |
 | `shield_core/taint/` | Building taint queries from language configuration and parsing Joern's answers. | Run Docker itself (the driver in `scripts/spikes/taint/` does). |
 | `shield_core/embeddings/` | Turning code (functions or graph nodes) into CodeBERT vectors. | Train or classify. |
 | `shield_core/models/` | Selecting and loading models (registry) with Python V1 default with stub fallback. | Hard-code model versions. |
@@ -491,7 +496,8 @@ SHIELD/
 | Check split QA (no group crosses a split) | `scripts/` | `split_qa.py` (**empty**) | ⬜ |
 | Turn code into a code property graph | `shield_core/extraction/` | `graph_extractor.py`, `joern_extractor.py` | ✅ |
 | Cache graphs | `shield_core/extraction/` | `cache.py` | ✅ |
-| Convert a graph to PyTorch Geometric | `scripts/` | `graphml_to_pyg.py` | 🟡 |
+| Convert a graph to PyTorch Geometric | `shield_core/graph_dataset/` | `filtering.py`, `to_pyg.py` | ✅ |
+| Build the processed GNN dataset | `shield_core/graph_dataset/` | `builder.py`, `scripts/graphs/build_pyg_dataset.py` | ✅ |
 | Build and run taint queries | `shield_core/taint/`, `scripts/spikes/taint/` | `joern_queries.py`, `run_taint_spike.py` | ✅ |
 | Generate a fix (SQLi, command injection, path traversal) | `shield_core/fix/templates/` | `sql.py`, `command.py`, `path.py` | ✅ |
 | Judge a fix | `shield_core/verify/` | `evidence.py`, `pattern_checks.py` | ✅ |
@@ -572,6 +578,16 @@ SHIELD/
 | `cache.py` | `CacheKey` = code sha + language + extension + extractor + extractor version + schema version; `GraphCache` (gzip JSON under `data/cache/graphs`, atomic writes, corruption-safe); `CachedGraphExtractor` wraps any extractor. Failures are never cached. | extractor + code | cached or fresh `CodeGraph`; hit/miss `stats()` |
 | `taint/joern_queries.py` | Generates the Joern taint script **from the language YAML** (no hand-written queries); `parse_output` turns the `@@SRC/@@SNK/@@SINK/@@FLOW` lines into a `Report` of `Sink`/`Flow`/`Step`. | `LanguageSpec`, `max_call_depth` | Scala script text · parsed `Report` |
 
+### 8.6.1 `shield_core/graph_dataset/`
+
+| File | Purpose | Input | Output |
+| --- | --- | --- | --- |
+| `schema.py` | Fixed converter 1.0 node/edge IDs, config fingerprint and `text_hash64`. | options / node text | stable IDs and signed int64 hash |
+| `filtering.py` | Torch-free Rule A/B filtering, node cap, quality diagnostics. | cached `CodeGraph` | filtered graph or skip reason |
+| `to_pyg.py` | Build 15-column node matrix and typed edge tensors. | filtered graph | PyG `Data` |
+| `builder.py` | Read split rows, fetch cache, build CWE vectors, save processed dataset and reports. | Parquet + graph cache | versioned split data and reports |
+| `dataset.py`, `stats.py` | Load one split; compute percentiles and label/CWE cap tables. | processed split / row report | `ShieldGraphDataset` / Markdown statistics |
+
 ### 8.7 `shield_core/datasets/`
 
 | File | Purpose | Input | Output |
@@ -606,6 +622,8 @@ SHIELD/
 | `data_audit/check_cvefixes_absent_commits.py` | Explains why some CVEfixes commits are missing from function-level data. | raw CVEfixes tables | `docs/cvefixes_*_absent_commits.md` |
 | `data_audit/explore_bigvul.py`, `explore_cvefixes_cpp.py`, `explore_cvefixes_python.py`, `explore_megavul.py`, `explore_zenodo_python.py` | Dataset exploration reports. | raw/interim data | `docs/*_exploration.md` |
 | `graphs/graphml_to_pyg.py` | Joern GraphML → PyG `Data` (12 node types one-hot + 3 taint-flag columns; 6 edge types). | `export.xml` | `Data(x, edge_index, …)` printed |
+| `graphs/export_to_fixture.py` | Freeze one GraphML export as a deterministic gzip CodeGraph fixture. | `export.xml` | `tests/fixtures/graphs/*.json.gz` |
+| `graphs/build_pyg_dataset.py` | Build split datasets, summaries, cap tables and reports from graph cache. | split Parquet + cache | `data/processed/pyg/` |
 | `graphs/filter_counts.py` | Shows what survives when bookkeeping nodes are dropped. | `export.xml` | counts printed |
 | `graphs/try_extractor.py` | End-to-end try-out of `CachedGraphExtractor(JoernExtractor)`: two calls prove the cache. | a source file + language | timings, node/edge counts, cache stats |
 | `tutorials/demo_tracking.py` | Demo of the run logger. | `--backend console\|mlflow\|wandb` | a logged run |
@@ -626,7 +644,7 @@ SHIELD/
 | `tutorials/pyg/check_env.py`, `lesson*.py`, `toy_gnn.py` | Environment check, PyG tutorials, toy GNN on MUTAG. | — | printed results |
 | `graphs/inspect_export/*.py` | Tiny inspectors: node/edge type counts, methods, edges of a Joern export. | `export.xml` | printed |
 
-### 8.10 `tests/` (821 collected test cases; the tree mirrors `shield_core/`)
+### 8.10 `tests/` (collected test count is verified by pytest; the tree mirrors `shield_core/`)
 
 | Folder | Test files |
 | --- | --- |
@@ -636,6 +654,7 @@ SHIELD/
 | `embeddings/` | `test_embedder.py`, `test_node_embeddings.py`, `test_long_embedding.py` (need torch) |
 | `datasets/` | `test_schema.py`, `test_loaders.py`, `test_bigvul_loader.py`, `test_megavul.py`, `test_cvefixes_cpp_loaders.py`, `test_cvefixes_python_loader.py`, `test_dedupe_overlap.py`, `test_project_normalizer.py`, `test_splits.py` |
 | `extraction/` | `test_graph_cache.py` |
+| `graph_dataset/` | `test_schema.py`, `test_filtering.py`, `test_to_pyg.py`, `test_builder.py`, `test_dataset.py`, `test_stats.py` |
 | `taint/` | `test_taint_queries.py` |
 | `spikes/` | `test_benchmark_core.py`, `test_benchmark_samples.py`, `test_benchmark_commands.py`, `test_benchmark_report.py`, `test_benchmark_fidelity.py`, `test_benchmark_docker_smoke.py` (requires Docker/image) |
 | `fix/` | `test_fix_template_sql.py`, `test_fix_template_command.py`, `test_fix_template_path.py` |
@@ -847,6 +866,7 @@ flowchart LR
     subgraph ENTRY["Entry points"]
         CLI["cli.py"]
         IF["interface.py"]
+        PYGCLI["build_pyg_dataset.py"]
     end
     subgraph CONFIG["Configuration"]
         LR["shield_core/languages/registry.py"]
@@ -865,8 +885,10 @@ flowchart LR
         GEX["graph_extractor.py"]
         JEX["joern_extractor.py"]
         CAC["cache.py"]
+        GDS["graph_dataset/"]
         TQ["taint/joern_queries.py"]
     end
+    PATHS["paths.py"]
     subgraph FIX["fix and verify"]
         PYS["verify/pysource.py"]
         PCK["verify/pattern_checks.py"]
@@ -876,6 +898,7 @@ flowchart LR
     TRK["tracking.py"]
 
     CLI --> IF
+    PYGCLI --> GDS
     CLI --> LR
     IF --> LR
     IF --> MR
@@ -897,6 +920,9 @@ flowchart LR
     JEX --> GEX
     JEX --> LR
     CAC --> GEX
+    GDS --> GEX
+    GDS --> CAC
+    GDS --> PATHS
     TQ --> LR
 
     PCK --> PYS
@@ -910,6 +936,29 @@ Scripts sit *outside* this map and only import from it:
 `acceptance_check.py → dedupe, schema, registry` · `try_extractor.py → cache, joern_extractor` ·
 `long_embedding.py → embedder` · `run_taint_spike.py → joern_queries, registry` · `demo_tracking.py → tracking`.
 `train_v1.py` is the command-line entry point for `scripts/training/v1_pipeline.py`; the pipeline uses the shared CodeBERT embedder, persistent embedding cache, model tracking, and model registry artifact layout.
+
+### 9.8 Story C2: cached graph → PyG dataset
+
+```mermaid
+sequenceDiagram
+    participant CLI as build_pyg_dataset.py
+    participant B as builder.build_split
+    participant C as GraphCache
+    participant F as filter_graph
+    participant P as to_data
+    participant S as InMemoryDataset.save
+    CLI->>B: split path, language, config
+    loop each split row
+        B->>C: lookup by code + language + versions
+        C-->>B: CodeGraph or cache miss
+        B->>F: apply Rule A/B, diagnostics and node cap
+        F-->>B: FilteredGraph or skip status
+        B->>P: create x, edge_index, edge_type and labels
+        P-->>B: PyG Data
+    end
+    B->>S: save split tensors
+    B-->>CLI: row report and build summary
+```
 
 ---
 
@@ -949,6 +998,8 @@ flowchart TD
     SP[/"splits/ train · val · test · holdout<br/>assignments.parquet<br/>docs/datasets/audits/dataset_manifest_v0.json"/]
     EM[/"&lt;split&gt;_embeddings.npy<br/>&lt;split&gt;_processed.parquet"/]
     ART[/"model_artifacts/train_runs/…/<br/>XGBoost models + metrics + calibration data"/]
+    GC[/(data/cache/graphs/<br/>Joern CodeGraph gzip JSON)/]
+    PYGD[/(data/processed/pyg/<br/>versioned PyG splits + cwe_vocab.json)/]
 
     K1 -->|bigvul_loader.py| R1
     K2 -->|download or place| R2
@@ -967,6 +1018,8 @@ flowchart TD
     MG -->|splits.py| SP
     SP -->|long_embedding.py| EM
     SP -->|train_v1.py| ART
+    SP -->|batch_extract.py| GC
+    GC -->|build_pyg_dataset.py| PYGD
     EM -.->|optional features| ART
 
     DD -->|acceptance_check.py| AUD["docs/datasets/audits/dataset_audit.md"]
@@ -1036,6 +1089,7 @@ flowchart LR
 | Project aliases | `docs/datasets/project_names/project_aliases.json` | `project_normalization.py` | `normalize_project_name` (read by `splits.py`) | JSON |
 | Embeddings | `<stem>_embeddings.npy` + `<stem>_processed.parquet` | `long_embedding.py` | `train_v1.py` | `float32` matrix, row *i* ↔ parquet row *i* |
 | Graph cache | `data/cache/graphs/…` | `CachedGraphExtractor` | any `GraphExtractor` user | gzip JSON of `CodeGraph` |
+| Processed PyG dataset | `data/processed/pyg/<converter>/<schema>/<language>/<fingerprint>/` | `scripts/graphs/build_pyg_dataset.py` | GNN training | split `.pt`, config, CWE vocabulary and row reports |
 | Joern export | `<folder>/export/export.xml` | `joern-export` | `parse_graphml`, `graphml_to_pyg.py`, `scripts/graphs/inspect_export/*` | GraphML |
 | Benchmark results and samples | `data/interim/joern_benchmark/{results,samples}.csv` | `benchmark_extraction.py` | `benchmark_report.py` | CSV; run and per-sample measurements |
 | Benchmark sample manifest | `data/interim/joern_benchmark/samples_manifest.csv` | `benchmark_samples.py` | `benchmark_extraction.py` | CSV; sample IDs and hashes |
@@ -1203,6 +1257,21 @@ flowchart TD
 ```
 
 ---
+### 11.6 Lifecycle of building the PyG dataset
+
+```mermaid
+flowchart TD
+    A[Read split rows] --> B[Cache lookup by code and extractor versions]
+    B -->|hit| C[Filter nodes and edges; compute quality diagnostics]
+    B -->|miss| D[Record no_graph_in_cache]
+    C --> E{Empty, unusable or over cap?}
+    E -->|yes| F[Record skip status]
+    E -->|no| G[Create PyG Data tensors]
+    G --> H[Save split and row report]
+    F --> H
+    H --> I[Write config, CWE vocabulary and size report]
+```
+
 ## 12. The public contract
 
 `shield_core/interface.py` is the **only** surface that the CLI, the future FastAPI backend, the web app and
@@ -1412,7 +1481,7 @@ grouping is not enforced yet.
 ## 15. Testing and CI
 
 ```bash
-pytest                      # all tests (680+ test cases)
+pytest                      # all tests (916 passed in the current checkout)
 pytest tests/datasets/test_splits.py # one area
 ruff check .                # lint (rules E, F, I, B; line length 100)
 ruff format --check .       # formatting (CI uses --check)
@@ -1425,12 +1494,13 @@ pre-commit run --all-files  # everything above, as on commit
 | **No language name hard-coded outside the registry** | `test_registry.py::test_no_language_literals_outside_registry` |
 | V1 default and stub fallback when the artifact is unavailable | `test_model_registry.py`, `test_v1_model.py` |
 | Graph cache: hit, miss, version bump, corruption, failure not cached | `test_graph_cache.py` |
+| PyG golden shapes, filtering, cap balance, builder and dataset loading | `tests/graph_dataset/` |
 | Taint query generation | `test_taint_queries.py` |
 | Every fix template, including its refusals | `test_fix_template_*.py`, `test_pattern_checks.py`, `test_evidence.py` |
 | Dataset loaders, schema, dedupe, project normalization, splits | `test_*loader*.py`, `test_schema.py`, `test_dedupe_overlap.py`, `test_project_normalizer.py`, `test_splits.py` |
 
 **CI** (`.github/workflows/ci.yml`) runs on every pull request and every push to `main`: install (CPU torch +
-`.[dev,data,ml]`) → `ruff check` → `ruff format --check` → `pytest`. `main` must always be runnable.
+`.[dev,data,ml,gnn]`) → `ruff check` → `ruff format --check` → `pytest`. PyG tensor and builder tests run in CI.
 
 ---
 
@@ -1493,7 +1563,8 @@ Honest list, so nobody is surprised. Each item names the plan task that closes i
 | 3 | `scripts/data_audit/split_qa.py` is an **empty file**; the split QA tool and its CI test do not exist yet. | `scripts/` | W2-P5-04 |
 | 4 | The CodeBERT pretrained weights need to be cached or downloaded on first inference; the XGBoost model files are distributed in the V1 release bundle. | `model_artifacts/v1/`, Hugging Face cache | provide pretrained weights for offline installs |
 | 5 | `shield_core/eval/metrics.py` gives weighted aggregates only (no per-CWE / per-language / multi-label). | `shield_core/eval/` | W2-P3-03 |
-| 6 | No batch graph runner yet (W2-P1-02); speed per sample is measured (`docs/graphs/extraction_report.md`), but two-file fidelity checks did not validate batching for Python, C or C++; the converter to PyG is still a script and graph schema is `0.1-draft`. W2-P2-04 records raw Python NO-GO, verified C and C++ GO, and recommends consistently wrapping indented Python method excerpts with source-line offset correction; production mapping remains to be validated. | `extraction/`, `scripts/graphs/graphml_to_pyg.py`, `scripts/spikes/joern/`, `docs/graphs/joern_triage.md` | W2-P1-02, W2-P2-01, W2-P2-04, W2-P2-05 |
+| 6 | Only a balanced 30-row Python smoke manifest/cache is present; full P1 split/cache data is still needed for corpus-wide size and cap analysis. W2-P2-04 records raw Python NO-GO, verified C and C++ GO, and recommends consistently wrapping indented Python method excerpts with source-line offset correction; production mapping remains to be validated. | `shield_core/graph_dataset/`, `scripts/graphs/`, `docs/graphs/joern_triage.md` | W2-P1-02, W2-P2-04, W2-P2-05 |
+| 14 | Taint flag columns stay zero until W3-P2-03; node text embeddings are not attached until W2-P3-04. | `shield_core/graph_dataset/to_pyg.py` | W3-P2-03, W2-P3-04 |
 | 7 | **364 CVE ids cross splits**; CVE-level grouping is not enforced. | manifest `diagnostics` | W2-P1-03 |
 | 8 | Python is only ≈ 1 % of rows; per-CWE Python claims are fragile. Class imbalance ≈ 6 % positives. | data | report group counts; D39 negatives |
 | 9 | No license/source note per dataset. | `docs/` | W2-P1-04 |
@@ -1543,11 +1614,11 @@ This README is a living map. It stays useful only if it is updated **in the same
 | **Per-dataset exploration** | `docs/datasets/exploration/` | `bigvul_exploration.md`, `megavul_exploration.md`, `cvefixes_cpp_exploration.md`, `cvefixes_python_exploration.md`, `zenodo_python_exploration.md`, `cvefixes_cpp_absent_commits.md`, `cvefixes_python_absent_commits.md` *(all generated)* |
 | **Leakage** | `docs/datasets/leakage/` | `python_cwe_data_leakage_high_risk.md`, `c_cpp_cwe_data_leakage_high_risk.md` |
 | **Project names** | `docs/datasets/project_names/` | `project_aliases.json` (read by `splits.py`) and the `project_alias_*.csv`, `project_name_mapping.csv`, `normalized_name_groups.csv`, `project_same_repo_other_owner.csv`, `shared_commit_projects.csv` review files *(generated)* |
-| **Graphs** | `docs/graphs/` | `graph_schema.md` (CPG → PyG design, `0.1-draft`), `graph_extractor.md` (the extractor + cache explained from scratch), `joern_spike.md` (go/no-go per language), `pyg_setup.md` |
+| **Graphs** | `docs/graphs/` | `graph_schema.md` (CPG → PyG design, `0.1-draft`), `pyg_dataset_report.md` (30-row Python smoke build; full corpus pending), `graph_extractor.md` (extractor + cache), `joern_spike.md` (go/no-go per language), `pyg_setup.md` |
 | **Taint** | `docs/taint/` | `taint_spike.md` (what Joern follows and misses, fixture by fixture) |
 | **Fixes** | `docs/fixes/` | `fix_template_survey.md`, `fix_templates_architecture.md`, `fix_templates_python.md` |
 | **Long functions** | `docs/modeling/` | `long_function_policy.md` (510-token windows, mean-pool) |
-| **Project management** | `docs/project/` | `REFACTOR_PLAN.md` (the folder refactor: old → new map, checklist, status) |
+| **Project management** | `docs/project/` | `REFACTOR_PLAN.md` (folder refactor), `W2-P2-01_cpg_to_pyg_builder_plan.md` (converter plan/status) |
 
 ---
 

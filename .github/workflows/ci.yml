@@ -20,7 +20,7 @@ jobs:
       - name: Install
         run: |
           pip install torch --index-url https://download.pytorch.org/whl/cpu
-          pip install -e ".[dev,data,ml]"
+          pip install -e ".[dev,data,ml,gnn]"
       - name: Lint
         run: ruff check .
       - name: Format check
