@@ -837,22 +837,16 @@ sequenceDiagram
     participant S as benchmark_samples.py
     participant A as JoernExtractor (variant A)
     participant D as Docker shield-joern (variants B, C)
-    participant F as benchmark_fidelity.py
     participant R as benchmark_report.py
     B->>S: spike-60 + scale-600 sample sets
     S-->>B: job files + samples_manifest.csv
-    loop each configuration (variant, workers, batch size, rep)
-        alt variant A
-            B->>A: extract(code, language, extension)
-            A->>D: docker run + joern-parse + joern-export
-        else variants B and C
-            B->>D: one container; emit timing and peak-memory markers
-        end
-        D-->>B: output + cgroup peak memory
-        B->>B: append results.csv and samples.csv
-    end
-    F->>D: compare two-file batch with per-file Joern outputs
-    F-->>R: fidelity.json (per-file verdicts)
+    B->>A: variant A extracts each file
+    A->>D: docker run + joern-parse + joern-export
+    B->>D: variants B/C parse batches in one container
+    D-->>B: graph outputs + cgroup peak memory
+    B->>B: append results.csv and samples.csv
+    B->>D: fidelity probe compares batched and per-file outputs
+    D-->>B: per-file fidelity verdicts
     R->>B: read results.csv and samples.csv
     R-->>R: aggregate timings and project hours for N rows
 ```
@@ -929,6 +923,8 @@ flowchart LR
     TPL --> PYS
 
     classDef root fill:#d4f4dd,stroke:#2e9b4f,color:#222,stroke-width:2px;
+    classDef readable fill:#f8fafc,stroke:#475569,color:#111827,stroke-width:1px;
+    class CLI,IF,PYGCLI,LR,MR,SCH,PNAME,PNORM,LDR,DED,MRG,SPL,GEX,JEX,CAC,GDS,TQ,PATHS,PYS,PCK,EVI,TPL,TRK readable;
     class LR root;
 ```
 
@@ -998,8 +994,8 @@ flowchart TD
     SP[/"splits/ train · val · test · holdout<br/>assignments.parquet<br/>docs/datasets/audits/dataset_manifest_v0.json"/]
     EM[/"&lt;split&gt;_embeddings.npy<br/>&lt;split&gt;_processed.parquet"/]
     ART[/"model_artifacts/train_runs/…/<br/>XGBoost models + metrics + calibration data"/]
-    GC[/(data/cache/graphs/<br/>Joern CodeGraph gzip JSON)/]
-    PYGD[/(data/processed/pyg/<br/>versioned PyG splits + cwe_vocab.json)/]
+    GC["data/cache/graphs/<br/>Joern CodeGraph gzip JSON"]
+    PYGD["data/processed/pyg/<br/>versioned PyG splits + cwe_vocab.json"]
 
     K1 -->|bigvul_loader.py| R1
     K2 -->|download or place| R2
