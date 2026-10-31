@@ -15,6 +15,8 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 
 # --- generated, git-ignored ---------------------------------------------------------
 DATA_DIR = REPO_ROOT / "data"
+PROCESSED_DIR = DATA_DIR / "processed"
+PYG_DATASET_DIR = PROCESSED_DIR / "pyg"
 RAW_DIR = DATA_DIR / "raw"  # downloaded datasets, untouched
 INTERIM_DIR = DATA_DIR / "interim"  # unified-schema parquet, deduped, merged
 SPLITS_DIR = INTERIM_DIR / "splits"  # train / val / test / holdout

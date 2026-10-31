@@ -8,7 +8,7 @@ Generated with Joern 4.0.647, schema_version 0.1-draft:
 
 ```
 docker run --rm -v "${PWD}\<folder>:/workspace/sample" shield-joern bash -c "joern-parse sample/<file>.py --language pythonsrc -o sample/cpg.bin && joern-export sample/cpg.bin --repr all --format graphml --out sample/export"
-python scripts/graphml_to_pyg.py <folder>/export/export.xml
+python scripts/graphs/graphml_to_pyg.py <folder>/export/export.xml
 ```
 
 Expected converter output (will change if Joern or the schema changes):

@@ -2,8 +2,8 @@
 
 **schema_version: 0.1-draft**
 
-Status: Week 1 deliverable, ready for Gate G1 review. The node set, edge set and feature
-layout below are implemented by `scripts/graphs/graphml_to_pyg.py` and checked against Joern 4.0.647
+Status: Week 1 schema; converter 1.0 is implemented in `shield_core/graph_dataset/`. The node set, edge set and feature
+layout below are checked against Joern 4.0.647
 on Python (3 samples), C (1 sample) and C++ (2 samples), all tiny. Items marked TENTATIVE rest
 on judgement or very little data and need an experiment. Raw graphs are produced by the
 GraphExtractor (`shield_core/extraction/`, D2) and cached; this document describes how those
@@ -66,14 +66,14 @@ own nodes as conditional. Whether it helps the model is an experiment.
 
 ## 4. Node features
 
-x = [one-hot node type (12) | is_source | is_sink | is_sanitizer | CodeBERT embedding of CODE].
+x = [one-hot node type (12) | is_source | is_sink | is_sanitizer] (15 columns).
 
 - The one-hot and the three flag columns are implemented (15 columns). The flags are all 0
   in the current converter. The taint spike (W1-P2-03, `docs/taint/taint_spike.md`) has filled the
   `sources`, `sinks` and `sanitizers` of the LanguageSpec YAML files and defined how the flags
   are set; wiring them into the converter is W3-P2-03 (see "Taint flags" below).
-- The CodeBERT embedding is frozen CodeBERT over the node's `CODE` text, cached by unique
-  string (D20). It is added in Week 2 (W2-P3-04) and is not part of the current converter.
+- `node_text_hash` stores a stable hash of the node's `CODE` text. Frozen CodeBERT vectors are
+  attached by W2-P3-04 and are not part of converter 1.0.
   Stub methods have the text `<empty>`; embedding their `NAME` instead is an open question.
 - Two different nodes can have identical text (e.g. two `name` identifiers on one line), so
   nodes are keyed by Joern node id, never by text.
@@ -128,8 +128,11 @@ Python: about 8 to 9 nodes per source line after filtering. A straight-line extr
 would put a 500-node cap near 55 lines and a 1000-node cap near 110 lines. This is a guess
 from tiny samples, not a measurement. The C samples are too small to give a ratio.
 
-Node cap: NOT SET (plan suggests 500 to 1000). Choose it from the node-count distribution of
-real dataset functions (use P1's Joern spike sample sets), then drop oversized samples.
+Node cap: converter default 750, chosen as the smallest tested candidate retaining at least 90%
+of graphs with at most a five-point label retention gap on the balanced 300-row Python smoke
+subset. This is not a corpus-wide estimate; see [`pyg_dataset_report.md`](pyg_dataset_report.md) and [`pyg_dataset_report_cpp.md`](pyg_dataset_report_cpp.md). Oversized graphs
+are skipped rather than truncated. Re-evaluate the cap from full split data when P1's cache and
+split manifests are available.
 
 ## 6. Worked example (Python get_user, vulnerable)
 
@@ -235,9 +238,32 @@ python scripts/graphs/graphml_to_pyg.py <folder>/export/export.xml
 `joern-export` refuses to write into an existing output folder. Fixtures live in
 `tests/fixtures/joern/`; generated exports are not committed.
 
+Build processed splits from the graph cache with `python -m scripts.graphs.build_pyg_dataset
+--language python --max-nodes 1000 --stub-rule A`. The output path includes converter version
+1.0, raw graph schema version, language, and the configuration fingerprint.
+
+## 11. Converter 1.0 contract
+
+`shield_core/graph_dataset/schema.py` freezes the 12 node types, six edge identifiers, 15-column
+node feature layout, `ConverterConfig`, and `text_hash64`. The `Data` object carries `x`,
+`edge_index`, `edge_type`, `node_type`, `node_text_hash`, `line`, `joern_id`, label/CWE fields and
+row provenance. Taint flags remain zero until W3-P2-03; node embedding vectors remain the W2-P3-04
+work. Rule A is the default; Rule B removes line-less METHOD stubs and their direct AST children.
+
+Filtering records raw graph quality (`has_real_method`, unknown-node share, CFG and reaching-def
+counts, meta-class-adapter count, and `usable`), regardless of whether node/edge filtering drops
+some raw graph elements. A graph is considered usable when it has a line-numbered non-wrapper
+METHOD, at least one CFG edge, and at most 5% UNKNOWN nodes. `drop_unusable` is opt-in.
+
+`ConverterConfig.fingerprint()` separates processed outputs by filtering options and node cap.
+Converter changes that alter output meaning require a manual `CONVERTER_VERSION` bump; raw graph
+changes continue to use `GRAPH_SCHEMA_VERSION`. The measured fixture counts and current cap caveat
+are in [`pyg_dataset_report.md`](pyg_dataset_report.md) and [`pyg_dataset_report_cpp.md`](pyg_dataset_report_cpp.md).
+
 ## Changelog
 
 - 0.1-draft: first version, Joern 4.0.647, Python samples.
 - 0.1-draft (notes added, no rule change): C and C++ findings, frontend values, stub-method rules.
 - - TYPE_REF recorded as dropped; versioning rules clarified (graph schema vs converter version).
 - 0.1-draft (notes added, no rule change): taint flags defined from the language YAML, lowering artifacts (`tmpN`, `<metaClassAdapter>`, unresolved C++ calls) documented; the converter change is W3-P2-03 and will bump the converter version.
+- converter 1.0: moved filtering and PyG building into `shield_core/graph_dataset/`; raw `schema_version` unchanged.
