@@ -56,6 +56,38 @@ def test_cap_skips_instead_of_truncating(tiny_graph):
     assert result.diagnostics.n_nodes == 2
 
 
+def test_cap_boundary_unwanted_types_edge_types_and_duplicate_edges(make_graph):
+    graph = make_graph(
+        [
+            GraphNode(3, "IDENTIFIER"),
+            GraphNode(4, "UNKNOWN"),
+            GraphNode(2, "CALL"),
+            GraphNode(1, "METHOD", name="f", line=1),
+        ],
+        [
+            GraphEdge(1, 2, "AST"),
+            GraphEdge(1, 2, "AST"),
+            GraphEdge(2, 3, "CFG"),
+            GraphEdge(4, 1, "CFG"),
+            GraphEdge(1, 3, "CDG"),
+        ],
+    )
+    result = filter_graph(graph, ConverterConfig(max_nodes=3, edge_types=("AST", "CFG")))
+    assert result.reason == "ok"
+    assert [node.id for node in result.graph.nodes] == [1, 2, 3]
+    assert result.graph.edges == [(0, 1, 0), (0, 1, 0), (1, 2, 1)]
+    assert result.diagnostics.n_unknown == 1
+    assert filter_graph(graph, ConverterConfig(max_nodes=2)).reason == "over_node_cap"
+
+
+def test_unusable_is_diagnostic_unless_requested_for_dropping(make_graph):
+    graph = make_graph([GraphNode(1, "METHOD", name="<module>"), GraphNode(2, "CALL")])
+    assert filter_graph(graph, ConverterConfig()).reason == "ok"
+    dropped = filter_graph(graph, ConverterConfig(drop_unusable=True))
+    assert dropped.reason == "unusable"
+    assert dropped.graph is None
+
+
 def test_filtering_does_not_import_torch():
     import subprocess
     import sys

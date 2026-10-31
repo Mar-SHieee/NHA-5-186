@@ -32,7 +32,7 @@ class ConverterConfig:
     """Options that affect graph selection and therefore processed dataset identity."""
 
     stub_rule: str = "A"
-    max_nodes: int | None = 1000
+    max_nodes: int | None = 750
     edge_types: tuple[str, ...] = tuple(EDGE_TYPES)
     drop_unusable: bool = False
 
