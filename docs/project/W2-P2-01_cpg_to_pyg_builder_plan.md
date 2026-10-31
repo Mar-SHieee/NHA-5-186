@@ -478,7 +478,7 @@ created. Edit these places, keep each edit small, and keep the existing style (t
 2026-10-31 | Phases 5-6 | split builder, dataset loader, stats, CLI and PyG CI coverage implemented | Eyad
 2026-10-31 | Phase 7 | extracted 200 train + 100 val Python rows; cap 750 selected; Rule B comparison and DataLoader sanity run | Eyad
 2026-10-31 | Phase 8 | schema/roadmap/README/CI docs updated; P3 node_text_hash recipe to be delivered in final chat | Eyad
-2026-10-31 | Phase 9 | 916 passed, 3 skipped; Ruff and layout clean; PR omitted as requested | Eyad
+2026-10-31 | Phase 9 | 917 passed, 3 skipped; Ruff and layout clean; PR omitted as requested | Eyad
 ```
 
 ## 10. Professor explanation outline (Phase 10)

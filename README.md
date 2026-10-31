@@ -1481,7 +1481,7 @@ grouping is not enforced yet.
 ## 15. Testing and CI
 
 ```bash
-pytest                      # all tests (916 passed in the current checkout)
+pytest                      # all tests (917 passed in the current checkout)
 pytest tests/datasets/test_splits.py # one area
 ruff check .                # lint (rules E, F, I, B; line length 100)
 ruff format --check .       # formatting (CI uses --check)

@@ -62,27 +62,33 @@ def build_split(
     cwe_vocab: list[str] | None = None,
     limit: int | None = None,
 ) -> BuildResult:
-    """Convert rows in original order while keeping a report row for every input row."""
+    """Convert requested-language rows in order and report every selected input row."""
     extractor = key_extractor or JoernExtractor(docker_image="shield-joern")
     vocab = cwe_vocab or []
     lookup = {v: i for i, v in enumerate(vocab)}
     result, reports, seen = [], [], set()
     parquet = pq.ParquetFile(split_path)
     row_index = 0
+    selected_count = 0
     for batch in parquet.iter_batches(columns=["code", "language", "label", "cwe"]):
         values = batch.to_pydict()
         for code, lang, label, cwes in zip(
             values["code"], values["language"], values["label"], values["cwe"], strict=True
         ):
+            if limit is not None and selected_count >= limit:
+                break
             current = row_index
             row_index += 1
+            if lang != language:
+                continue
+            selected_count += 1
             sha = code_sha256(code) if isinstance(code, str) else ""
             row = {
                 "row": current,
                 "code_sha": sha,
                 "label": int(label),
                 "cwe": _cwes(cwes),
-                "status": "other_language" if lang != language else "bad_code",
+                "status": "bad_code",
                 "n_nodes_raw": 0,
                 "n_edges_raw": 0,
                 "n_nodes": 0,
@@ -96,11 +102,6 @@ def build_split(
                 "n_meta_class_adapter": 0,
                 "edge_counts": {},
             }
-            if limit is not None and len(reports) >= limit:
-                break
-            if lang != language:
-                reports.append(row)
-                continue
             if not isinstance(code, str) or not code.strip():
                 reports.append(row)
                 continue

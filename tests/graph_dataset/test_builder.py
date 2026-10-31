@@ -90,3 +90,24 @@ def test_build_all_writes_versioned_outputs_and_protects_existing(
     assert len(ShieldGraphDataset(root, "train")) == 1
     with pytest.raises(FileExistsError):
         builder.build_all("python", ConverterConfig(), splits=("train",), out_root=tmp_path / "out")
+
+
+def test_limit_counts_only_requested_language_rows(tmp_path, load_graph):
+    code = "def target(): return 1"
+    path = tmp_path / "mixed.parquet"
+    pd.DataFrame(
+        {
+            "code": ["int other;", code],
+            "language": ["cpp", "python"],
+            "label": [0, 1],
+            "cwe": [[], ["CWE-1"]],
+        }
+    ).to_parquet(path)
+    extractor = FakeExtractor()
+    cache = MemoryCache(
+        {CacheKey.for_code(code, "python", extractor).code_sha: load_graph("get_user_py")}
+    )
+    result = build_split(path, "python", ConverterConfig(), cache, extractor, limit=1)
+    assert len(result.rows) == 1
+    assert result.rows[0]["row"] == 1
+    assert result.rows[0]["status"] == "ok"
