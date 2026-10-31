@@ -130,7 +130,7 @@ from tiny samples, not a measurement. The C samples are too small to give a rati
 
 Node cap: converter default 750, chosen as the smallest tested candidate retaining at least 90%
 of graphs with at most a five-point label retention gap on the balanced 300-row Python smoke
-subset. This is not a corpus-wide estimate; see [`pyg_dataset_report.md`](pyg_dataset_report.md). Oversized graphs
+subset. This is not a corpus-wide estimate; see [`pyg_dataset_report.md`](pyg_dataset_report.md) and [`pyg_dataset_report_cpp.md`](pyg_dataset_report_cpp.md). Oversized graphs
 are skipped rather than truncated. Re-evaluate the cap from full split data when P1's cache and
 split manifests are available.
 
@@ -258,7 +258,7 @@ METHOD, at least one CFG edge, and at most 5% UNKNOWN nodes. `drop_unusable` is 
 `ConverterConfig.fingerprint()` separates processed outputs by filtering options and node cap.
 Converter changes that alter output meaning require a manual `CONVERTER_VERSION` bump; raw graph
 changes continue to use `GRAPH_SCHEMA_VERSION`. The measured fixture counts and current cap caveat
-are in [`pyg_dataset_report.md`](pyg_dataset_report.md).
+are in [`pyg_dataset_report.md`](pyg_dataset_report.md) and [`pyg_dataset_report_cpp.md`](pyg_dataset_report_cpp.md).
 
 ## Changelog
 

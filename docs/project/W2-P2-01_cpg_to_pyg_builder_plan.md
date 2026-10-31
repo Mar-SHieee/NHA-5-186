@@ -417,8 +417,8 @@ build a mini cache yourself so this phase can finish** (7.1). P1's full run is t
 Last ticked box:      Phase 10 professor explanation delivered
 In progress:          none; full-corpus rerun is a follow-up after P1 publishes full split/cache data
 Decisions answered:   package + filtering/tensor contracts per plan; CI gnn extra enabled
-Chosen node cap:      provisional 750 (300-row balanced subset; 97.3% retained, 2.67 pp gap)
-Cache status:         300 Python rows extracted (200 train, 100 val); no full P1 cache
+Chosen node cap:      provisional 750 Python; explicit 500 C/C++ (each passes subset criteria)
+Cache status:         300 Python + 300 C/C++ rows extracted; no full P1 cache
 Branch / PR:          W2-P2-01; phase commits created; PR intentionally not created per user
 ```
 
@@ -474,7 +474,7 @@ created. Edit these places, keep each edit small, and keep the existing style (t
 ```
 2026-10-31 | Phases 0-4 | branch verified; five fixtures and Rule A/B golden filters/tensors committed | Eyad
 2026-10-31 | Phases 5-6 | split builder, dataset loader, stats, CLI and PyG CI coverage implemented | Eyad
-2026-10-31 | Phase 7 | extracted 200 train + 100 val Python rows; cap 750 selected; Rule B comparison and DataLoader sanity run | Eyad
+2026-10-31 | Phase 7 | extracted 200 train + 100 val Python and C/C++ rows; caps 750/500; Rule B comparisons and DataLoader sanity runs | Eyad
 2026-10-31 | Phase 8 | schema/roadmap/README/CI docs updated; P3 node_text_hash recipe to be delivered in final chat | Eyad
 2026-10-31 | Phase 9 | 917 passed, 3 skipped; Ruff and layout clean; PR omitted as requested | Eyad
 2026-10-31 | Phase 10 | professor-style file walkthrough and P3 `node_text_hash` handoff delivered in chat | Eyad

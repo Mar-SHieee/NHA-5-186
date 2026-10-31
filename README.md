@@ -137,7 +137,7 @@ artifact is missing or cannot load, the registry falls back to the built-in stub
 | | Batch extraction over the training subset | ⬜ | W2-P1-02; speed measured (W2-P2-05) |
 | | Extraction benchmark (`scripts/spikes/joern/benchmark_extraction.py`) | ✅ | Per-sample vs batched Joern, 1/2/4 workers, memory; results in `docs/graphs/extraction_report.md` |
 | | CPG → PyG converter | ✅ | `shield_core/graph_dataset/` · converter 1.0 · five Python/C/C++ fixtures and a 300-row Python smoke build |
-| | Processed PyG dataset | 🟡 | 300-row Python smoke build exists; full P1 manifests/cache are still needed for corpus-wide use |
+| | Processed PyG dataset | 🟡 | 300-row Python and 300-row C/C++ smoke builds exist; full P1 manifests/cache are still needed for corpus-wide use |
 | **Taint** | Query generator from YAML | ✅ | `shield_core/taint/joern_queries.py` |
 | | Taint spike driver | ✅ | `scripts/spikes/taint/run_taint_spike.py` |
 | | Taint as model features | ⬜ | Week 3 |
@@ -1563,7 +1563,7 @@ Honest list, so nobody is surprised. Each item names the plan task that closes i
 | 3 | `scripts/data_audit/split_qa.py` is an **empty file**; the split QA tool and its CI test do not exist yet. | `scripts/` | W2-P5-04 |
 | 4 | The CodeBERT pretrained weights need to be cached or downloaded on first inference; the XGBoost model files are distributed in the V1 release bundle. | `model_artifacts/v1/`, Hugging Face cache | provide pretrained weights for offline installs |
 | 5 | `shield_core/eval/metrics.py` gives weighted aggregates only (no per-CWE / per-language / multi-label). | `shield_core/eval/` | W2-P3-03 |
-| 6 | Only a balanced 30-row Python smoke manifest/cache is present; full P1 split/cache data is still needed for corpus-wide size and cap analysis. W2-P2-04 records raw Python NO-GO, verified C and C++ GO, and recommends consistently wrapping indented Python method excerpts with source-line offset correction; production mapping remains to be validated. | `shield_core/graph_dataset/`, `scripts/graphs/`, `docs/graphs/joern_triage.md` | W2-P1-02, W2-P2-04, W2-P2-05 |
+| 6 | Only balanced 300-row Python and C/C++ smoke manifests/caches are present; full P1 split/cache data is still needed for corpus-wide size and cap analysis. W2-P2-04 records raw Python NO-GO, verified C and C++ GO, and recommends consistently wrapping indented Python method excerpts with source-line offset correction; production mapping remains to be validated. | `shield_core/graph_dataset/`, `scripts/graphs/`, `docs/graphs/joern_triage.md` | W2-P1-02, W2-P2-04, W2-P2-05 |
 | 14 | Taint flag columns stay zero until W3-P2-03; node text embeddings are not attached until W2-P3-04. | `shield_core/graph_dataset/to_pyg.py` | W3-P2-03, W2-P3-04 |
 | 7 | **364 CVE ids cross splits**; CVE-level grouping is not enforced. | manifest `diagnostics` | W2-P1-03 |
 | 8 | Python is only ≈ 1 % of rows; per-CWE Python claims are fragile. Class imbalance ≈ 6 % positives. | data | report group counts; D39 negatives |
@@ -1614,7 +1614,7 @@ This README is a living map. It stays useful only if it is updated **in the same
 | **Per-dataset exploration** | `docs/datasets/exploration/` | `bigvul_exploration.md`, `megavul_exploration.md`, `cvefixes_cpp_exploration.md`, `cvefixes_python_exploration.md`, `zenodo_python_exploration.md`, `cvefixes_cpp_absent_commits.md`, `cvefixes_python_absent_commits.md` *(all generated)* |
 | **Leakage** | `docs/datasets/leakage/` | `python_cwe_data_leakage_high_risk.md`, `c_cpp_cwe_data_leakage_high_risk.md` |
 | **Project names** | `docs/datasets/project_names/` | `project_aliases.json` (read by `splits.py`) and the `project_alias_*.csv`, `project_name_mapping.csv`, `normalized_name_groups.csv`, `project_same_repo_other_owner.csv`, `shared_commit_projects.csv` review files *(generated)* |
-| **Graphs** | `docs/graphs/` | `graph_schema.md` (CPG → PyG design, `0.1-draft`), `pyg_dataset_report.md` (30-row Python smoke build; full corpus pending), `graph_extractor.md` (extractor + cache), `joern_spike.md` (go/no-go per language), `pyg_setup.md` |
+| **Graphs** | `docs/graphs/` | `graph_schema.md` (CPG → PyG design, `0.1-draft`), `pyg_dataset_report.md` (300-row Python smoke build), `pyg_dataset_report_cpp.md` (300-row C/C++ smoke build), `graph_extractor.md` (extractor + cache), `joern_spike.md` (go/no-go per language), `pyg_setup.md` |
 | **Taint** | `docs/taint/` | `taint_spike.md` (what Joern follows and misses, fixture by fixture) |
 | **Fixes** | `docs/fixes/` | `fix_template_survey.md`, `fix_templates_architecture.md`, `fix_templates_python.md` |
 | **Long functions** | `docs/modeling/` | `long_function_policy.md` (510-token windows, mean-pool) |
