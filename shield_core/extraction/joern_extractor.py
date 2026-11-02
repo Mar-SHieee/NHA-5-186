@@ -11,6 +11,7 @@ Joern runs either locally (joern-parse on PATH) or inside the shield-joern Docke
 from __future__ import annotations
 
 import os
+import re
 import shutil
 import subprocess
 import tempfile
@@ -32,6 +33,22 @@ from shield_core.languages import registry
 DEFAULT_JOERN_VERSION = "4.0.647"  # must match ARG JOERN_VERSION in docker/joern/Dockerfile
 DEFAULT_DOCKER_IMAGE = "shield-joern"
 _GRAPHML = "{http://graphml.graphdrawing.org/xmlns}"
+
+
+def preprocess_cpp_for_joern(code: str) -> str:
+    """Remove selected C++ annotations that interfere with Joern parsing.
+
+    Only modifies the temporary source passed to Joern.
+    The original source remains unchanged for hashing and caching.
+    """
+    pattern = re.compile(
+        r"(?<!\w)(?:noinline|__user"
+        r"|OVS_UNUSED|ATTRIBUTE_UNUSED|G_GNUC_UNUSED|__maybe_unused|__unused)(?!\w)"
+    )
+
+    # Replace tokens with spaces instead of deleting them.
+    # This preserves line numbers and approximate source positions.
+    return pattern.sub(lambda match: " " * len(match.group()), code)
 
 
 def parse_graphml(source: str | Path) -> tuple[list[GraphNode], list[GraphEdge]]:
@@ -101,7 +118,12 @@ class JoernExtractor(GraphExtractor):
         with tempfile.TemporaryDirectory(prefix="shield_joern_") as tmp:
             work = Path(tmp)
             os.chmod(work, 0o777)  # the container user is not root; it must be able to write
-            (work / f"code{ext}").write_text(normalize_code(code), encoding="utf-8")
+            source = normalize_code(code)
+
+            if language.lower() in {"cpp", "c++"}:
+                source = preprocess_cpp_for_joern(source)
+
+            (work / f"code{ext}").write_text(source, encoding="utf-8")
             self._run_joern(work, f"code{ext}", frontend)
             export = work / "export" / "export.xml"
             if not export.exists():
