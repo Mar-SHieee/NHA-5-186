@@ -33,6 +33,25 @@ cwes:
     "CWE-122",
     "CWE-674",
   ]
+ts_nodes:
+  branches: [if_statement]
+  functions: [function_definition]
+  name_fields: [declarator, name]
+  loops: [for_statement, while_statement, do_statement, for_range_loop]
+  decisions:
+    ["&&", "||", "and", "or", conditional_expression, "case", catch_clause]
+  nesting:
+    [
+      if_statement,
+      for_statement,
+      while_statement,
+      do_statement,
+      for_range_loop,
+      switch_statement,
+      try_statement,
+    ]
+  skip_nesting_under: [else_clause]
+
 # Taint configuration (W1-P2-03). Evidence: docs/taint/taint_spike.md, Part B (fixtures c01-c24 in
 # tests/fixtures/taint/c). Every pattern is a Joern regex and must match the WHOLE text.
 # Only entries whose FLOW was observed are active. Entries with an observed argument index but

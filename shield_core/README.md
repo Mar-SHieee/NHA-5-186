@@ -11,10 +11,10 @@
 | `datasets/` | Dataset schema, loaders, deduplication, merge, and group-safe splits. |
 | `embeddings/` | CodeBERT function and graph-node embeddings. V1 uses sliding windows and mean pooling. |
 | `eval/` | Evaluation metrics. |
-| `extraction/` | Joern code-property-graph extraction and disk cache. |
+| `extraction/` | Joern code-property-graph extraction and disk cache, plus tree-sitter function splitting and code metrics. |
 | `graph_dataset/` | Deterministic cached CodeGraph filtering, PyG conversion, split building and size reports. |
 | `fix/`, `verify/` | Template fixes and verification checks. |
-| `languages/` | Language configuration and registry. |
+| `languages/` | Language configuration and registry (taint rules, fix templates, tree-sitter node names). |
 | `models/` | Model registry, CodeBERT + XGBoost V1 loader, and GitHub Release installer. |
 | `taint/` | Taint-analysis query generation and result parsing. |
 

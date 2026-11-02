@@ -21,9 +21,11 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
+from shield_core.paths import DOCS_AUDITS_DIR, INTERIM_DIR
+from shield_core.paths import SPLITS_DIR as NEW_SPLITS_DIR
+
 REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))
-
 try:
     from shield_core.datasets.pipeline.project_normalization import normalize_project_name
 except Exception:  # noqa: BLE001 - fall back to plain cleanup when the package is unavailable
@@ -34,10 +36,10 @@ except Exception:  # noqa: BLE001 - fall back to plain cleanup when the package 
         return str(value).strip().lower() or pd.NA
 
 
-MANIFEST_PATH = REPO_ROOT / "docs" / "dataset_manifest_v0.json"
-REPORT_PATH = REPO_ROOT / "docs" / "datasets" / "audits" / "split_qa.md"
-SPLITS_DIR = REPO_ROOT / "data" / "interim" / "splits"
-MAPPING_DIR = REPO_ROOT / "data" / "interim"
+MANIFEST_PATH = DOCS_AUDITS_DIR / "dataset_manifest_v0.json"
+REPORT_PATH = DOCS_AUDITS_DIR / "split_qa.md"
+SPLITS_DIR = NEW_SPLITS_DIR
+MAPPING_DIR = INTERIM_DIR
 COLUMNS = ["code", "label", "cwe", "project", "commit", "cve", "source"]
 EXAMPLES = 10
 

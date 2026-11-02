@@ -47,7 +47,7 @@ _SOURCE_KINDS = ("call", "argument", "parameter")
 # Optional key (W2-P4-03). The registry does not import shield_core.verify (that would be a cycle:
 # interface -> registry, evidence -> interface), so a rating is stored as the plain string and the
 # caller converts it with Rating(spec.rating).
-_OPTIONAL_KEYS = ("fix_templates",)
+_OPTIONAL_KEYS = ("fix_templates", "ts_nodes")
 _FIX_RATINGS = ("strong", "weak", "none")
 _FIX_NAME_RE = re.compile(r"^[a-z_][a-z0-9_]*$")
 
@@ -156,6 +156,9 @@ class LanguageSpec:
     # A default must come last. Languages without templates (cpp and java before Week 3) leave it
     # out of the YAML file.
     fix_templates: tuple[FixTemplateSpec, ...] = ()
+    # Node-type names of the tree-sitter grammar, grouped by meaning (W2-P5-02):
+    # {"branches": ("if_statement", ...), "loops": (...)}. Empty when the YAML has none.
+    ts_nodes: dict[str, tuple[str, ...]] = field(default_factory=dict)
 
     def fix_template(self, cwe: str) -> FixTemplateSpec | None:
         """The template entry for a CWE, or None when the language has none."""
@@ -365,6 +368,23 @@ def _parse_fix_templates(
     return tuple(result)
 
 
+def _parse_ts_nodes(path: Path, data: dict[str, Any]) -> dict[str, tuple[str, ...]]:
+    if "ts_nodes" not in data:
+        return {}
+    value = data["ts_nodes"]
+    if not isinstance(value, dict):
+        raise _fail(path, "'ts_nodes' must be a mapping of category -> list of node types")
+    result: dict[str, tuple[str, ...]] = {}
+    for category, types in value.items():
+        if not isinstance(category, str) or not _FIX_NAME_RE.match(category):
+            raise _fail(path, f"'ts_nodes' category {category!r} must be a lowercase identifier")
+        valid = isinstance(types, list) and all(isinstance(t, str) and t.strip() for t in types)
+        if not valid:
+            raise _fail(path, f"'ts_nodes.{category}' must be a list of non-empty strings")
+        result[category] = tuple(types)
+    return result
+
+
 def _parse_spec(path: Path, data: Any) -> LanguageSpec:
     if not isinstance(data, dict):
         raise _fail(path, "the file must contain a mapping of keys to values")
@@ -407,6 +427,7 @@ def _parse_spec(path: Path, data: Any) -> LanguageSpec:
         sinks=_parse_sinks(path, data),
         sanitizers=_parse_sanitizers(path, data),
         fix_templates=_parse_fix_templates(path, data, cwes),
+        ts_nodes=_parse_ts_nodes(path, data),
     )
 
 
