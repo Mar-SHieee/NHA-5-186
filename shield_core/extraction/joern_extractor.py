@@ -41,7 +41,10 @@ def preprocess_cpp_for_joern(code: str) -> str:
     Only modifies the temporary source passed to Joern.
     The original source remains unchanged for hashing and caching.
     """
-    pattern = re.compile(r"(?<!\w)(?:noinline|__user)(?!\w)")
+    pattern = re.compile(
+        r"(?<!\w)(?:noinline|__user"
+        r"|OVS_UNUSED|ATTRIBUTE_UNUSED|G_GNUC_UNUSED|__maybe_unused|__unused)(?!\w)"
+    )
 
     # Replace tokens with spaces instead of deleting them.
     # This preserves line numbers and approximate source positions.

@@ -24,6 +24,20 @@ SPLITS_DIR = ROOT / "data" / "interim" / "splits"
 RUNS_DIR = ROOT / "data" / "interim" / "joern_runs"
 CACHE_DIR = ROOT / "data" / "cache" / "graphs"
 
+# The "cpp" rows are mostly C. Joern parses a .cpp file as C++ and fails on much C code,
+# so try .c first and fall back to .cpp (real C++ code).
+CPP_EXTENSIONS = (".c", ".cpp")
+
+
+def extensions_for(language: str) -> tuple[str | None, ...]:
+    """File extensions to try, in order. None = the language's default extension."""
+    return CPP_EXTENSIONS if language == "cpp" else (None,)
+
+
+def has_real_function(graph) -> bool:
+    """True if Joern found a function: a METHOD node whose name is not <global>."""
+    return any(node.type == "METHOD" and node.name != "<global>" for node in graph.nodes)
+
 
 def sha256_text(value: str) -> str:
     """Keep the same sample-key hash convention as the previous runner."""
@@ -46,6 +60,9 @@ def assess_graph_quality(graph) -> dict:
 
     if unknown_count > 0:
         reasons.append("unknown_nodes")
+
+    if not has_real_function(graph):
+        reasons.append("no_function_parsed")
 
     return {
         "quality_status": "review" if reasons else "ok",
@@ -198,11 +215,17 @@ def iter_pending(
 
             if sample_key in completed:
                 # Validate the on-disk graph rather than trusting the progress log alone.
-                try:
-                    key = CacheKey.for_code(code, language, key_extractor)
-                    cached_graph = validation_cache.get(key)
-                except Exception:
-                    cached_graph = None
+                # Same order as the worker: a missing graph for an extension the worker
+                # would try means the sample still needs extraction.
+                cached_graph = None
+                for extension in extensions_for(language):
+                    try:
+                        key = CacheKey.for_code(code, language, key_extractor, extension)
+                        cached_graph = validation_cache.get(key)
+                    except Exception:
+                        cached_graph = None
+                    if cached_graph is None or has_real_function(cached_graph):
+                        break
 
                 if cached_graph is not None:
                     scan_stats["skipped_completed_cache_valid"] += 1
@@ -328,7 +351,11 @@ def main() -> None:
                     ),
                     cache=cache,
                 )
-                graph = extractor.extract(item["code"], args.language)
+                # Try each extension; keep the first graph that contains a real function
+                for extension in extensions_for(args.language):
+                    graph = extractor.extract(item["code"], args.language, extension)
+                    if has_real_function(graph):
+                        break
                 quality = assess_graph_quality(graph)
 
                 return {
@@ -339,6 +366,7 @@ def main() -> None:
                     "index": item["index"],
                     "status": "success",
                     "attempts": attempts_used,
+                    "extension": extension,
                     "nodes": len(graph.nodes),
                     "edges": len(graph.edges),
                     **quality,
