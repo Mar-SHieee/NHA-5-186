@@ -20,6 +20,7 @@ PYG_DATASET_DIR = PROCESSED_DIR / "pyg"
 RAW_DIR = DATA_DIR / "raw"  # downloaded datasets, untouched
 INTERIM_DIR = DATA_DIR / "interim"  # unified-schema parquet, deduped, merged
 SPLITS_DIR = INTERIM_DIR / "splits"  # train / val / test / holdout
+CODE_METRICS_DIR = INTERIM_DIR / "code_metrics"  # tree-sitter metric table for V2
 CACHE_DIR = DATA_DIR / "cache"  # embedding + commit-lookup caches
 GRAPH_CACHE_DIR = CACHE_DIR / "graphs"  # Joern graphs keyed by code hash + versions
 MODEL_ARTIFACTS_DIR = REPO_ROOT / "model_artifacts"  # files the model registry loads
